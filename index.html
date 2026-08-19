@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Ideology Draft Simulator</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    background: #1b1b1f;
+    color: #e8e8ec;
+    margin: 0;
+    padding: 20px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px 0; }
+  .sub { color: #9a9aa5; font-size: 13px; margin-bottom: 16px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: 380px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .layout { grid-template-columns: 1fr; }
+  }
+
+  .panel {
+    background: #232329;
+    border: 1px solid #35353d;
+    border-radius: 8px;
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+  .panel h2 {
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #9a9aa5;
+    margin: 0 0 10px 0;
+  }
+
+  /* ---- Axis bars ---- */
+  .axis { margin-bottom: 14px; }
+  .axis:last-child { margin-bottom: 0; }
+  .axis-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: #c7c7d1;
+    margin-bottom: 4px;
+  }
+  .axis-labels .pole-influence { color: #6fb6ff; }
+  .axis-labels .pole-control { color: #ff8f6f; }
+  .axis-value {
+    font-size: 12px;
+    color: #9a9aa5;
+    text-align: center;
+    margin-bottom: 3px;
+  }
+  .axis-track {
+    position: relative;
+    height: 16px;
+    background: #17171b;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #35353d;
+  }
+  .axis-fill {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    background: linear-gradient(90deg, #6fb6ff, #ff8f6f);
+  }
+  .axis-mid {
+    position: absolute;
+    left: 50%;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,0.35);
+  }
+  .axis-zone-marker {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,0.15);
+  }
+
+  /* ---- Pressure meter ---- */
+  .pressure-track {
+    height: 14px;
+    background: #17171b;
+    border-radius: 7px;
+    overflow: hidden;
+    border: 1px solid #35353d;
+    margin-top: 6px;
+  }
+  .pressure-fill {
+    height: 100%;
+    background: #e0455f;
+    transition: width 0.15s ease;
+  }
+  .status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 13px;
+    margin-top: 6px;
+  }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-off { background: #2c2c33; color: #8a8a94; }
+  .badge-on { background: #5a1f28; color: #ff9aa8; }
+
+  .stat-line {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: #c7c7d1;
+    margin-bottom: 6px;
+  }
+  .stat-line b { color: #e8e8ec; }
+
+  /* ---- Cards ---- */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+  }
+  .card {
+    background: #2a2a31;
+    border: 1px solid #3d3d46;
+    border-radius: 8px;
+    padding: 12px;
+    cursor: pointer;
+    text-align: left;
+    color: inherit;
+    font: inherit;
+  }
+  .card:hover:not(:disabled) {
+    border-color: #6fb6ff;
+    background: #2f2f38;
+  }
+  .card:disabled { cursor: default; opacity: 0.5; }
+  .card-name { font-weight: 600; margin-bottom: 6px; }
+  .card-effect {
+    font-size: 12px;
+    color: #ffcf8f;
+    margin-bottom: 8px;
+    font-family: monospace;
+  }
+  .card-flavor { font-size: 12px; color: #9a9aa5; font-style: italic; }
+
+  /* ---- Log ---- */
+  .log {
+    max-height: 480px;
+    overflow-y: auto;
+    font-family: monospace;
+    font-size: 12px;
+  }
+  .log-entry {
+    padding: 8px;
+    border-bottom: 1px solid #303038;
+    line-height: 1.5;
+  }
+  .log-entry:first-child {
+    background: #26262d;
+  }
+  .log-tick { color: #6fb6ff; font-weight: bold; }
+
+  /* ---- Banner ---- */
+  .banner {
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+  }
+  .banner-win { background: #1f5a33; color: #a8ffbf; }
+  .banner-loss { background: #5a1f28; color: #ff9aa8; }
+  .banner-sub { font-size: 12px; font-weight: 400; margin-top: 6px; color: inherit; opacity: 0.85; }
+
+  button.restart {
+    background: #3a3a44;
+    color: #e8e8ec;
+    border: 1px solid #4d4d59;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button.restart:hover { background: #45454f; }
+</style>
+</head>
+<body>
+
+<h1>Ideology Draft Simulator</h1>
+<div class="sub">Test harness for the ideology-draft / lever-balance mechanic. All state is in-memory; nothing persists.</div>
+
+<div id="bannerContainer"></div>
+
+<div class="layout">
+  <div class="left-col">
+
+    <div class="panel">
+      <h2>Levers</h2>
+      <div id="axesContainer"></div>
+    </div>
+
+    <div class="panel">
+      <h2>External Pressure</h2>
+      <div class="stat-line"><span>Pressure</span><b id="pressureValue">0 / 100</b></div>
+      <div class="pressure-track"><div class="pressure-fill" id="pressureFill" style="width:0%"></div></div>
+      <div class="status-row">
+        <span>Fragmented</span>
+        <span id="fragmentedBadge" class="badge badge-off">NO</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Run Status</h2>
+      <div class="stat-line"><span>Tick</span><b id="tickValue">0</b></div>
+      <div class="stat-line"><span>Win-hold streak</span><b id="streakValue">0 / 3</b></div>
+      <button class="restart" id="restartBtn">Restart</button>
+    </div>
+
+  </div>
+
+  <div class="right-col">
+
+    <div class="panel">
+      <h2>Draft — pick one card</h2>
+      <div class="cards" id="cardsContainer"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <div class="log" id="logContainer"></div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ============================================================================
+// CONFIG — every tunable number for the simulator lives here.
+// ============================================================================
+const CONFIG = {
+  AXIS_MIN: 0,
+  AXIS_MAX: 100,
+  AXIS_START: 50,
+
+  LOSS_CONTROL_THRESHOLD: 100,   // any axis hitting this = immediate loss, "Overthrown"
+  LOSS_INFLUENCE_THRESHOLD: 0,   // any axis hitting this = enters "Fragmented" state (not an immediate loss)
+
+  WIN_CONTROL_THRESHOLD: 85,     // axis >= this counts as "pinned toward Control" for victory
+  WIN_INFLUENCE_THRESHOLD: 15,   // axis <= this counts as "pinned toward Influence" for victory
+  WIN_HOLD_TICKS: 3,             // qualifying configuration must hold this many consecutive ticks to win
+
+  EXTERNAL_PRESSURE_MAX: 100,
+  EXTERNAL_PRESSURE_RISE_PER_TICK: 15,   // while Fragmented
+  EXTERNAL_PRESSURE_DECAY_PER_TICK: 10,  // while NOT Fragmented, floor at 0
+
+  CARDS_PER_DRAFT: 3,            // how many distinct cards are offered each tick
+};
+
+// ============================================================================
+// AXIS DEFINITIONS — pole names shown in the UI for each axis key.
+// ============================================================================
+const AXES = [
+  { key: "military",   controlLabel: "Military",   influenceLabel: "Contentment" },
+  { key: "government",  controlLabel: "Government", influenceLabel: "Culture" },
+  { key: "capital",     controlLabel: "Capital",    influenceLabel: "Labor" },
+];
+
+// ============================================================================
+// IDEOLOGY CARDS — the pool of 20 draft cards. Transcribed exactly from spec.
+// effects: list of { axis, delta } — positive = toward Control, negative = toward Influence.
+// pressureDelta: optional direct External Pressure modifier (only card 19 uses this).
+// ============================================================================
+const CARDS = [
+  { id: 1,  name: "Conscription Doctrine",         effects: [{ axis: "military", delta: 15 }],
+    flavor: "Mandatory service swells the ranks and quells dissent through discipline." },
+  { id: 2,  name: "Martial Curfew",                 effects: [{ axis: "military", delta: 10 }],
+    flavor: "Nightly curfews suppress unrest fast, and are resented quietly." },
+  { id: 3,  name: "Codified Legal Order",           effects: [{ axis: "government", delta: 15 }],
+    flavor: "Dense law and policing tighten the state's grip on daily life." },
+  { id: 4,  name: "Loyalty Oaths",                  effects: [{ axis: "government", delta: 10 }],
+    flavor: "Public adherence is required and enforced." },
+  { id: 5,  name: "Consolidate Industry",           effects: [{ axis: "capital", delta: 15 }],
+    flavor: "Ownership concentrates in a select few, output rises, poverty deepens." },
+  { id: 6,  name: "Company Towns",                  effects: [{ axis: "capital", delta: 10 }],
+    flavor: "Workers depend entirely on employer-controlled housing and wages." },
+  { id: 7,  name: "Public Assemblies",              effects: [{ axis: "military", delta: -10 }],
+    flavor: "The state steps back, lets people gather and speak freely." },
+  { id: 8,  name: "Veterans' Grievance Council",    effects: [{ axis: "military", delta: -15 }],
+    flavor: "Former soldiers are heard, militarism's grip cools." },
+  { id: 9,  name: "Open Ideas Festival",            effects: [{ axis: "government", delta: -15 }],
+    flavor: "The state loosens its hold, ideas circulate freely." },
+  { id: 10, name: "Community Self-Governance",      effects: [{ axis: "government", delta: -10 }],
+    flavor: "Local councils replace top-down rule." },
+  { id: 11, name: "Profit Sharing Mandate",         effects: [{ axis: "capital", delta: -15 }],
+    flavor: "Workers gain a real stake in what they produce." },
+  { id: 12, name: "Universal Basic Income",         effects: [{ axis: "capital", delta: -10 }],
+    flavor: "A floor beneath everyone loosens capital's grip on necessity." },
+  { id: 13, name: "Cult of Personality",            effects: [{ axis: "government", delta: 10 }, { axis: "military", delta: 5 }],
+    flavor: "A singular leader-myth binds law and army together, no room left for dissent." },
+  { id: 14, name: "Technocratic Council",           effects: [{ axis: "government", delta: -5 }, { axis: "capital", delta: 10 }],
+    flavor: "Experts run the state efficiently, but wealth still pools upward." },
+  { id: 15, name: "Popular Front",                  effects: [{ axis: "military", delta: -5 }, { axis: "capital", delta: -10 }],
+    flavor: "Soldiers and workers unite around shared grievance, a coalition built on trust, not pressure." },
+  { id: 16, name: "State Capitalism",               effects: [{ axis: "capital", delta: 10 }, { axis: "government", delta: 5 }],
+    flavor: "The state and the owning class merge into one machine." },
+  { id: 17, name: "Conscript Legions",              effects: [{ axis: "military", delta: 10 }],
+    flavor: "Faster expansion, larger cultural shock on whoever you absorb. (flavor: absorb via control)" },
+  { id: 18, name: "Missionary Envoys",              effects: [{ axis: "government", delta: -10 }],
+    flavor: "Soft diplomacy wins hearts before you claim any land. Slower, no shock. (flavor: absorb via influence)" },
+  { id: 19, name: "Non-Aggression Pact",            effects: [{ axis: "military", delta: -5 }], pressureDelta: -20,
+    flavor: "A treaty buys time, but the army that isn't marching isn't feared either." },
+  { id: 20, name: "Espionage Network",              effects: [{ axis: "government", delta: 5 }],
+    flavor: "Knowing your neighbor's weak point is its own kind of power. (flavor: rival reveal, not implemented)" },
+];
+
+// ============================================================================
+// STATE — all game state lives here, in memory only.
+// ============================================================================
+let state = null;
+
+function freshState() {
+  const axes = {};
+  AXES.forEach(a => { axes[a.key] = CONFIG.AXIS_START; });
+  return {
+    axes,
+    pressure: 0,
+    fragmented: false,
+    tick: 0,
+    winStreak: 0,
+    gameOver: false,
+    outcome: null,      // { result: "win"|"loss", reason: string, detail: string }
+    currentDraft: [],
+    log: [],
+  };
+}
+
+function clampAxis(v) {
+  return Math.max(CONFIG.AXIS_MIN, Math.min(CONFIG.AXIS_MAX, v));
+}
+
+// Draw CONFIG.CARDS_PER_DRAFT distinct cards at random from the pool.
+function drawCards() {
+  const pool = CARDS.slice();
+  const draft = [];
+  for (let i = 0; i < CONFIG.CARDS_PER_DRAFT && pool.length > 0; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    draft.push(pool[idx]);
+    pool.splice(idx, 1);
+  }
+  return draft;
+}
+
+function formatEffect(card) {
+  const parts = card.effects.map(e => {
+    const axisDef = AXES.find(a => a.key === e.axis);
+    const sign = e.delta >= 0 ? "+" : "";
+    return `${axisDef.controlLabel} ${sign}${e.delta}`;
+  });
+  if (card.pressureDelta) {
+    const sign = card.pressureDelta >= 0 ? "+" : "";
+    parts.push(`Pressure ${sign}${card.pressureDelta}`);
+  }
+  return parts.join(", ");
+}
+
+// Apply a chosen card and run the full tick evaluation per the spec's exact order.
+function playCard(card) {
+  if (state.gameOver) return;
+
+  const beforeAxes = Object.assign({}, state.axes);
+  const beforePressure = state.pressure;
+
+  // 1. Apply the chosen card's axis effect(s), clamp each axis to [0, 100].
+  const appliedDeltas = [];
+  card.effects.forEach(e => {
+    const newVal = clampAxis(state.axes[e.axis] + e.delta);
+    appliedDeltas.push({ axis: e.axis, delta: e.delta, before: state.axes[e.axis], after: newVal });
+    state.axes[e.axis] = newVal;
+  });
+  if (card.pressureDelta) {
+    state.pressure = Math.max(0, Math.min(CONFIG.EXTERNAL_PRESSURE_MAX, state.pressure + card.pressureDelta));
+  }
+
+  // 2. Update Fragmented: true if ANY axis is exactly at LOSS_INFLUENCE_THRESHOLD (0).
+  state.fragmented = AXES.some(a => state.axes[a.key] === CONFIG.LOSS_INFLUENCE_THRESHOLD);
+
+  // 3. Update External Pressure based on Fragmented state.
+  if (state.fragmented) {
+    state.pressure = Math.min(CONFIG.EXTERNAL_PRESSURE_MAX, state.pressure + CONFIG.EXTERNAL_PRESSURE_RISE_PER_TICK);
+  } else {
+    state.pressure = Math.max(0, state.pressure - CONFIG.EXTERNAL_PRESSURE_DECAY_PER_TICK);
+  }
+
+  state.tick += 1;
+
+  // 4. Check loss, in order: Overthrown first, then Absorbed.
+  let outcome = null;
+  const overthrownAxis = AXES.find(a => state.axes[a.key] === CONFIG.LOSS_CONTROL_THRESHOLD);
+  if (overthrownAxis) {
+    outcome = { result: "loss", reason: "Overthrown",
+      detail: `${overthrownAxis.controlLabel} reached ${CONFIG.LOSS_CONTROL_THRESHOLD}.` };
+  } else if (state.fragmented && state.pressure >= CONFIG.EXTERNAL_PRESSURE_MAX) {
+    outcome = { result: "loss", reason: "Absorbed",
+      detail: `Fragmented with External Pressure at ${state.pressure}.` };
+  }
+
+  // 5. If not lost, check win.
+  // Note: an axis sitting exactly at LOSS_CONTROL_THRESHOLD (100) or
+  // LOSS_INFLUENCE_THRESHOLD (0) can never count toward a win — those values
+  // only ever produce a loss or a Fragmented state, never a "pinned" pole.
+  let controlCount = 0, influenceCount = 0;
+  const controlAxes = [], influenceAxes = [];
+  AXES.forEach(a => {
+    const v = state.axes[a.key];
+    if (v >= CONFIG.WIN_CONTROL_THRESHOLD && v < CONFIG.LOSS_CONTROL_THRESHOLD) { controlCount++; controlAxes.push(a.controlLabel); }
+    if (v <= CONFIG.WIN_INFLUENCE_THRESHOLD && v > CONFIG.LOSS_INFLUENCE_THRESHOLD) { influenceCount++; influenceAxes.push(a.influenceLabel); }
+  });
+  const qualifies = (controlCount >= 2 && influenceCount >= 1) || (influenceCount >= 2 && controlCount >= 1);
+
+  if (!outcome) {
+    if (qualifies) {
+      state.winStreak += 1;
+      if (state.winStreak >= CONFIG.WIN_HOLD_TICKS) {
+        outcome = { result: "win", reason: "Victory",
+          detail: `Held configuration (Control: ${controlAxes.join(", ") || "none"} | Influence: ${influenceAxes.join(", ") || "none"}) for ${state.winStreak} consecutive ticks.` };
+      }
+    } else {
+      state.winStreak = 0;
+    }
+  }
+
+  // Build log entry describing exactly what happened this tick.
+  const axesSummary = AXES.map(a => `${a.key}=${state.axes[a.key]}`).join(", ");
+  const deltasSummary = appliedDeltas.map(d => `${d.axis} ${d.delta >= 0 ? "+" : ""}${d.delta} (${d.before}→${d.after})`).join(", ");
+  const pressureNote = card.pressureDelta ? `, pressure card delta ${card.pressureDelta >= 0 ? "+" : ""}${card.pressureDelta}` : "";
+
+  state.log.unshift({
+    tick: state.tick,
+    cardName: card.name,
+    deltasSummary,
+    axesSummary,
+    pressureBefore: beforePressure,
+    pressureAfter: state.pressure,
+    fragmented: state.fragmented,
+    pressureNote,
+    winStreak: state.winStreak,
+  });
+
+  if (outcome) {
+    state.gameOver = true;
+    state.outcome = outcome;
+    state.currentDraft = [];
+  } else {
+    // 6. Draw the next 3 cards and continue.
+    state.currentDraft = drawCards();
+  }
+}
+
+// ============================================================================
+// RENDERING
+// ============================================================================
+function render() {
+  renderBanner();
+  renderAxes();
+  renderPressure();
+  renderStatus();
+  renderCards();
+  renderLog();
+}
+
+function renderBanner() {
+  const container = document.getElementById("bannerContainer");
+  if (!state.outcome) {
+    container.innerHTML = "";
+    return;
+  }
+  const cls = state.outcome.result === "win" ? "banner-win" : "banner-loss";
+  const title = state.outcome.result === "win" ? `Victory!` : `Defeat — ${state.outcome.reason}`;
+  container.innerHTML = `
+    <div class="banner ${cls}">
+      ${title}
+      <div class="banner-sub">${state.outcome.detail}</div>
+    </div>
+  `;
+}
+
+function renderAxes() {
+  const container = document.getElementById("axesContainer");
+  container.innerHTML = AXES.map(a => {
+    const v = state.axes[a.key];
+    const zoneControlPct = CONFIG.WIN_CONTROL_THRESHOLD;
+    const zoneInfluencePct = CONFIG.WIN_INFLUENCE_THRESHOLD;
+    return `
+      <div class="axis">
+        <div class="axis-labels">
+          <span class="pole-influence">${a.influenceLabel} ${CONFIG.AXIS_MIN}</span>
+          <span>&lt;---|---&gt;</span>
+          <span class="pole-control">${CONFIG.AXIS_MAX} ${a.controlLabel}</span>
+        </div>
+        <div class="axis-value">${v}</div>
+        <div class="axis-track">
+          <div class="axis-fill" style="width:${v}%"></div>
+          <div class="axis-mid"></div>
+          <div class="axis-zone-marker" style="left:${zoneControlPct}%"></div>
+          <div class="axis-zone-marker" style="left:${zoneInfluencePct}%"></div>
+        </div>
+      </div>
+    `;
+  }).join("");
+}
+
+function renderPressure() {
+  document.getElementById("pressureValue").textContent = `${state.pressure} / ${CONFIG.EXTERNAL_PRESSURE_MAX}`;
+  document.getElementById("pressureFill").style.width = `${state.pressure}%`;
+  const badge = document.getElementById("fragmentedBadge");
+  badge.textContent = state.fragmented ? "YES" : "NO";
+  badge.className = "badge " + (state.fragmented ? "badge-on" : "badge-off");
+}
+
+function renderStatus() {
+  document.getElementById("tickValue").textContent = state.tick;
+  document.getElementById("streakValue").textContent = `${state.winStreak} / ${CONFIG.WIN_HOLD_TICKS}`;
+}
+
+function renderCards() {
+  const container = document.getElementById("cardsContainer");
+  if (state.gameOver) {
+    container.innerHTML = `<div class="card-flavor">Run over. Press Restart to draft again.</div>`;
+    return;
+  }
+  container.innerHTML = state.currentDraft.map((card, i) => `
+    <button class="card" data-index="${i}">
+      <div class="card-name">${card.name}</div>
+      <div class="card-effect">${formatEffect(card)}</div>
+      <div class="card-flavor">${card.flavor}</div>
+    </button>
+  `).join("");
+  container.querySelectorAll(".card").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.index);
+      playCard(state.currentDraft[idx]);
+      render();
+    });
+  });
+}
+
+function renderLog() {
+  const container = document.getElementById("logContainer");
+  if (state.log.length === 0) {
+    container.innerHTML = `<div class="card-flavor" style="padding:8px;">No ticks yet. Pick a card to begin.</div>`;
+    return;
+  }
+  container.innerHTML = state.log.map(entry => `
+    <div class="log-entry">
+      <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
+      Deltas: ${entry.deltasSummary}${entry.pressureNote}<br>
+      Axes now: ${entry.axesSummary}<br>
+      Pressure: ${entry.pressureBefore} → ${entry.pressureAfter} | Fragmented: ${entry.fragmented ? "YES" : "NO"} | Win-hold streak: ${entry.winStreak}
+    </div>
+  `).join("");
+}
+
+// ============================================================================
+// INIT / RESTART
+// ============================================================================
+function startNewRun() {
+  state = freshState();
+  state.currentDraft = drawCards();
+  render();
+}
+
+document.getElementById("restartBtn").addEventListener("click", startNewRun);
+
+startNewRun();
+</script>
+
+</body>
+</html>
