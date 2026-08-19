@@ -136,18 +136,21 @@
     font: inherit;
   }
   .card:hover:not(:disabled) {
-    border-color: #6fb6ff;
-    background: #2f2f38;
+    filter: brightness(1.2);
   }
   .card:disabled { cursor: default; opacity: 0.5; }
   .card-name { font-weight: 600; margin-bottom: 6px; }
-  .card-effect {
-    font-size: 12px;
-    color: #ffcf8f;
-    margin-bottom: 8px;
-    font-family: monospace;
-  }
+  .card-effects { margin-bottom: 8px; font-family: monospace; }
+  .card-effect-line { font-size: 12px; color: #e8e8ec; line-height: 1.5; }
+  .card-effect-tag { color: #9a9aa5; }
+  .card-special-line { font-size: 12px; color: #e8b354; line-height: 1.5; }
   .card-flavor { font-size: 12px; color: #9a9aa5; font-style: italic; }
+
+  /* Card color-coding by lever classification — a left-border accent plus a
+     faint background tint of the same color, so text stays readable. */
+  .card-control { border-left: 4px solid #b03a2e; background: rgba(176, 58, 46, 0.14); }
+  .card-influence { border-left: 4px solid #1e8449; background: rgba(30, 132, 73, 0.14); }
+  .card-mixed { border-left: 4px solid #7d3c98; background: rgba(125, 60, 152, 0.14); }
 
   /* ---- Log ---- */
   .log {
@@ -211,14 +214,14 @@
       <div class="stat-line"><span>RevoltPressure (Control side)</span><b id="revoltValue">0 / 100</b></div>
       <div class="pressure-track"><div class="pressure-fill pressure-fill-revolt" id="revoltFill" style="width:0%"></div></div>
       <div class="status-row">
-        <span>Axes at 100 right now</span>
+        <span id="revoltCountLabel">Axes at 100 right now</span>
         <span id="revoltCount">0</span>
       </div>
 
       <div class="stat-line" style="margin-top:14px;"><span>FragmentPressure (Influence side)</span><b id="fragmentValue">0 / 100</b></div>
       <div class="pressure-track"><div class="pressure-fill pressure-fill-fragment" id="fragmentFill" style="width:0%"></div></div>
       <div class="status-row">
-        <span>Axes at 0 right now</span>
+        <span id="fragmentCountLabel">Axes at -100 right now</span>
         <span id="fragmentCount">0</span>
       </div>
     </div>
@@ -252,19 +255,19 @@
 // CONFIG — every tunable number for the simulator lives here.
 // ============================================================================
 const CONFIG = {
-  AXIS_MIN: 0,
+  AXIS_MIN: -100,
   AXIS_MAX: 100,
-  AXIS_START: 50,
+  AXIS_START: 0,
 
   // An axis sitting exactly at one of these "extreme" values feeds a pressure
   // meter each tick (see PRESSURE_RATE below). Sitting at an extreme no longer
   // causes an instant loss by itself, and no longer blocks a win by itself —
   // it just means one of the two pressure meters below is now ticking up.
-  CONTROL_EXTREME: 100,     // axis == this counts toward RevoltPressure
-  INFLUENCE_EXTREME: 0,     // axis == this counts toward FragmentPressure
+  CONTROL_EXTREME: 100,      // axis == this counts toward RevoltPressure
+  INFLUENCE_EXTREME: -100,   // axis == this counts toward FragmentPressure
 
-  WIN_CONTROL_THRESHOLD: 85,     // axis >= this counts as "pinned toward Control" for victory
-  WIN_INFLUENCE_THRESHOLD: 15,   // axis <= this counts as "pinned toward Influence" for victory
+  WIN_CONTROL_THRESHOLD: 70,     // axis >= this counts as "pinned toward Control" for victory
+  WIN_INFLUENCE_THRESHOLD: -70,  // axis <= this counts as "pinned toward Influence" for victory
   WIN_HOLD_TICKS: 3,             // qualifying configuration must hold this many consecutive ticks to win
 
   PRESSURE_MAX: 100,   // either meter reaching this ends the run
@@ -303,51 +306,114 @@ const AXES = [
 ];
 
 // ============================================================================
-// IDEOLOGY CARDS — the pool of 20 draft cards. Transcribed exactly from spec.
-// effects: list of { axis, delta } — positive = toward Control, negative = toward Influence.
-// pressureDelta: optional direct modifier applied to both pressure meters (only card 19 uses this).
+// POLE TABLE — every card effect names a pole (never a raw axis+sign). This
+// table is the single place that maps a pole name to the axis it moves and
+// which direction it moves it: +1 means toward Control, -1 means toward
+// Influence. Cards for a Control-side pole (sign +1) apply instantly; cards
+// for an Influence-side pole (sign -1) ramp over INFLUENCE_RAMP_TICKS ticks.
+// ============================================================================
+const POLE_TABLE = {
+  Military:    { axis: "military",   sign: 1  },
+  Contentment: { axis: "military",   sign: -1 },
+  Government:  { axis: "government", sign: 1  },
+  Culture:     { axis: "government", sign: -1 },
+  Capital:     { axis: "capital",    sign: 1  },
+  Labor:       { axis: "capital",    sign: -1 },
+};
+
+// ============================================================================
+// IDEOLOGY CARDS — the pool of 40 draft cards. Transcribed exactly from spec.
+// effects: list of { pole, amount } — amount is always positive, POLE_TABLE
+// above resolves it to an axis and a signed direction. Never a raw signed
+// number here.
+// special: optional { meter: "RevoltPressure"|"FragmentPressure", amount }
+// applied directly to that one pressure meter, on top of any lever effects.
 // ============================================================================
 const CARDS = [
-  { id: 1,  name: "Conscription Doctrine",         effects: [{ axis: "military", delta: 15 }],
+  { id: 1,  name: "Conscription Doctrine",  effects: [{ pole: "Military", amount: 30 }],
     flavor: "Mandatory service swells the ranks and quells dissent through discipline." },
-  { id: 2,  name: "Martial Curfew",                 effects: [{ axis: "military", delta: 10 }],
+  { id: 2,  name: "Martial Curfew",  effects: [{ pole: "Military", amount: 20 }],
     flavor: "Nightly curfews suppress unrest fast, and are resented quietly." },
-  { id: 3,  name: "Codified Legal Order",           effects: [{ axis: "government", delta: 15 }],
+  { id: 3,  name: "Codified Legal Order",  effects: [{ pole: "Government", amount: 30 }],
     flavor: "Dense law and policing tighten the state's grip on daily life." },
-  { id: 4,  name: "Loyalty Oaths",                  effects: [{ axis: "government", delta: 10 }],
+  { id: 4,  name: "Loyalty Oaths",  effects: [{ pole: "Government", amount: 20 }],
     flavor: "Public adherence is required and enforced." },
-  { id: 5,  name: "Consolidate Industry",           effects: [{ axis: "capital", delta: 15 }],
+  { id: 5,  name: "Consolidate Industry",  effects: [{ pole: "Capital", amount: 30 }],
     flavor: "Ownership concentrates in a select few, output rises, poverty deepens." },
-  { id: 6,  name: "Company Towns",                  effects: [{ axis: "capital", delta: 10 }],
+  { id: 6,  name: "Company Towns",  effects: [{ pole: "Capital", amount: 20 }],
     flavor: "Workers depend entirely on employer-controlled housing and wages." },
-  { id: 7,  name: "Public Assemblies",              effects: [{ axis: "military", delta: -10 }],
+  { id: 7,  name: "Public Assemblies",  effects: [{ pole: "Contentment", amount: 20 }],
     flavor: "The state steps back, lets people gather and speak freely." },
-  { id: 8,  name: "Veterans' Grievance Council",    effects: [{ axis: "military", delta: -15 }],
+  { id: 8,  name: "Veterans' Grievance Council",  effects: [{ pole: "Contentment", amount: 30 }],
     flavor: "Former soldiers are heard, militarism's grip cools." },
-  { id: 9,  name: "Open Ideas Festival",            effects: [{ axis: "government", delta: -15 }],
+  { id: 9,  name: "Open Ideas Festival",  effects: [{ pole: "Culture", amount: 30 }],
     flavor: "The state loosens its hold, ideas circulate freely." },
-  { id: 10, name: "Community Self-Governance",      effects: [{ axis: "government", delta: -10 }],
+  { id: 10, name: "Community Self-Governance",  effects: [{ pole: "Culture", amount: 20 }],
     flavor: "Local councils replace top-down rule." },
-  { id: 11, name: "Profit Sharing Mandate",         effects: [{ axis: "capital", delta: -15 }],
+  { id: 11, name: "Profit Sharing Mandate",  effects: [{ pole: "Labor", amount: 30 }],
     flavor: "Workers gain a real stake in what they produce." },
-  { id: 12, name: "Universal Basic Income",         effects: [{ axis: "capital", delta: -10 }],
+  { id: 12, name: "Universal Basic Income",  effects: [{ pole: "Labor", amount: 20 }],
     flavor: "A floor beneath everyone loosens capital's grip on necessity." },
-  { id: 13, name: "Cult of Personality",            effects: [{ axis: "government", delta: 10 }, { axis: "military", delta: 5 }],
+  { id: 13, name: "Cult of Personality",  effects: [{ pole: "Government", amount: 20 }, { pole: "Military", amount: 10 }],
     flavor: "A singular leader-myth binds law and army together, no room left for dissent." },
-  { id: 14, name: "Technocratic Council",           effects: [{ axis: "government", delta: -5 }, { axis: "capital", delta: 10 }],
+  { id: 14, name: "Technocratic Council",  effects: [{ pole: "Culture", amount: 10 }, { pole: "Capital", amount: 20 }],
     flavor: "Experts run the state efficiently, but wealth still pools upward." },
-  { id: 15, name: "Popular Front",                  effects: [{ axis: "military", delta: -5 }, { axis: "capital", delta: -10 }],
+  { id: 15, name: "Popular Front",  effects: [{ pole: "Contentment", amount: 10 }, { pole: "Labor", amount: 20 }],
     flavor: "Soldiers and workers unite around shared grievance, a coalition built on trust, not pressure." },
-  { id: 16, name: "State Capitalism",               effects: [{ axis: "capital", delta: 10 }, { axis: "government", delta: 5 }],
+  { id: 16, name: "State Capitalism",  effects: [{ pole: "Capital", amount: 20 }, { pole: "Government", amount: 10 }],
     flavor: "The state and the owning class merge into one machine." },
-  { id: 17, name: "Conscript Legions",              effects: [{ axis: "military", delta: 10 }],
-    flavor: "Faster expansion, larger cultural shock on whoever you absorb. (flavor: absorb via control)" },
-  { id: 18, name: "Missionary Envoys",              effects: [{ axis: "government", delta: -10 }],
-    flavor: "Soft diplomacy wins hearts before you claim any land. Slower, no shock. (flavor: absorb via influence)" },
-  { id: 19, name: "Non-Aggression Pact",            effects: [{ axis: "military", delta: -5 }], pressureDelta: -20,
+  { id: 17, name: "Conscript Legions [Absorb via Control]",  effects: [{ pole: "Military", amount: 20 }],
+    flavor: "Faster expansion, larger cultural shock on whoever you absorb." },
+  { id: 18, name: "Missionary Envoys [Absorb via Influence]",  effects: [{ pole: "Culture", amount: 20 }],
+    flavor: "Soft diplomacy wins hearts before you claim any land. Slower, no shock." },
+  { id: 19, name: "Non-Aggression Pact",  effects: [{ pole: "Contentment", amount: 10 }],
+    special: { meter: "FragmentPressure", amount: -20 },
     flavor: "A treaty buys time, but the army that isn't marching isn't feared either." },
-  { id: 20, name: "Espionage Network",              effects: [{ axis: "government", delta: 5 }],
-    flavor: "Knowing your neighbor's weak point is its own kind of power. (flavor: rival reveal, not implemented)" },
+  { id: 20, name: "Espionage Network",  effects: [{ pole: "Government", amount: 10 }],
+    flavor: "Knowing your neighbor's weak point is its own kind of power." },
+  { id: 21, name: "Border Fortification",  effects: [{ pole: "Military", amount: 20 }],
+    flavor: "Fortified borders project strength and deter unrest through visible readiness." },
+  { id: 22, name: "State Broadcast Network",  effects: [{ pole: "Government", amount: 30 }],
+    flavor: "A single approved narrative reaches every household, dissent has nowhere to hide." },
+  { id: 23, name: "Resource Nationalization",  effects: [{ pole: "Capital", amount: 20 }],
+    flavor: "The state seizes key industries outright, wealth funnels upward fast." },
+  { id: 24, name: "Mandatory Registration",  effects: [{ pole: "Government", amount: 10 }],
+    flavor: "Every citizen is catalogued and accounted for." },
+  { id: 25, name: "Harvest Festivals",  effects: [{ pole: "Contentment", amount: 20 }],
+    flavor: "Shared celebration builds goodwill the state didn't have to force." },
+  { id: 26, name: "Independent Press Charter",  effects: [{ pole: "Culture", amount: 30 }],
+    flavor: "A free press circulates ideas the state doesn't control, trust grows where fear used to sit." },
+  { id: 27, name: "Worker Cooperatives",  effects: [{ pole: "Labor", amount: 20 }],
+    flavor: "Ownership shifts into the hands of the people doing the work." },
+  { id: 28, name: "Open Petition Rights",  effects: [{ pole: "Contentment", amount: 10 }],
+    flavor: "Grievances get heard before they curdle into resentment." },
+  { id: 29, name: "Garrison State",  effects: [{ pole: "Military", amount: 20 }, { pole: "Government", amount: 10 }],
+    flavor: "Army and law fuse into a single machine, nothing moves without approval." },
+  { id: 30, name: "Enlightened Despotism",  effects: [{ pole: "Government", amount: 20 }, { pole: "Contentment", amount: 10 }],
+    flavor: "A firm hand governs, but genuine care for public happiness softens the grip." },
+  { id: 31, name: "Solidarity Economy",  effects: [{ pole: "Labor", amount: 20 }, { pole: "Contentment", amount: 10 }],
+    flavor: "Shared prosperity and shared goodwill reinforce each other." },
+  { id: 32, name: "Oligarch Compact",  effects: [{ pole: "Capital", amount: 20 }, { pole: "Culture", amount: 10 }],
+    flavor: "Wealth concentrates while the state loosens its cultural grip to keep the deal quiet." },
+  { id: 33, name: "Colonial Levy [Absorb via Control]",  effects: [{ pole: "Military", amount: 20 }],
+    flavor: "Conscripted colonial troops swell the ranks fast, at the cost of trust in what you've taken." },
+  { id: 34, name: "Puppet Governance [Absorb via Control]",  effects: [{ pole: "Government", amount: 20 }],
+    flavor: "Installed local rulers answer to you first, the populace second." },
+  { id: 35, name: "Cultural Attaché Corps [Absorb via Influence]",  effects: [{ pole: "Culture", amount: 20 }],
+    flavor: "Diplomats embed early, softening the ground before any claim is made." },
+  { id: 36, name: "Shared Currency Pact [Absorb via Influence]",  effects: [{ pole: "Labor", amount: 20 }],
+    flavor: "Economic ties bind new populations to you gently, without a single soldier." },
+  { id: 37, name: "Border Skirmish",  effects: [{ pole: "Military", amount: 10 }],
+    special: { meter: "RevoltPressure", amount: 10 },
+    flavor: "A probing strike shows strength, but risks the very tension you're trying to manage." },
+  { id: 38, name: "Trade Concordat",  effects: [{ pole: "Labor", amount: 10 }],
+    flavor: "A trade deal with a neighboring power spreads prosperity at home." },
+  { id: 39, name: "Defector Amnesty",  effects: [{ pole: "Contentment", amount: 10 }],
+    special: { meter: "FragmentPressure", amount: -15 },
+    flavor: "Welcoming those who flee a rival's control directly relieves the pressure of your own fraying edges." },
+  { id: 40, name: "Joint Military Exercise",  effects: [{ pole: "Military", amount: 10 }],
+    special: { meter: "RevoltPressure", amount: -10 },
+    flavor: "A show of shared strength with an ally eases domestic tension without a real fight." },
 ];
 
 // ============================================================================
@@ -400,18 +466,33 @@ function drawCards() {
   return draft;
 }
 
-function formatEffect(card) {
-  const parts = card.effects.map(e => {
-    const axisDef = AXES.find(a => a.key === e.axis);
-    const sign = e.delta >= 0 ? "+" : "";
-    const tag = e.delta >= 0 ? "instant" : `ramped over ${CONFIG.INFLUENCE_RAMP_TICKS} ticks`;
-    return `${axisDef.controlLabel} ${sign}${e.delta} (${tag})`;
-  });
-  if (card.pressureDelta) {
-    const sign = card.pressureDelta >= 0 ? "+" : "";
-    parts.push(`both pressure meters ${sign}${card.pressureDelta}`);
+// "control" if every lever effect is on a Control-side pole, "influence" if
+// every effect is on an Influence-side pole, "mixed" if both appear. The
+// special pressure field (if any) is ignored for this classification.
+function classifyCard(card) {
+  const allControl = card.effects.every(e => POLE_TABLE[e.pole].sign > 0);
+  const allInfluence = card.effects.every(e => POLE_TABLE[e.pole].sign < 0);
+  if (allControl) return "control";
+  if (allInfluence) return "influence";
+  return "mixed";
+}
+
+// Build the HTML for a card's effect lines: one per lever effect (with a
+// direction arrow matching the bar — Control poles point right, Influence
+// poles point left), plus a plain special-effect line if the card has one.
+function formatCardEffects(card) {
+  const leverLines = card.effects.map(e => {
+    const def = POLE_TABLE[e.pole];
+    const arrow = def.sign > 0 ? "→" : "←";
+    const tag = def.sign > 0 ? "instant" : `ramped over ${CONFIG.INFLUENCE_RAMP_TICKS} ticks`;
+    return `<div class="card-effect-line">${e.pole} ${arrow} +${e.amount} <span class="card-effect-tag">(${tag})</span></div>`;
+  }).join("");
+  let specialLine = "";
+  if (card.special) {
+    const sign = card.special.amount >= 0 ? "+" : "";
+    specialLine = `<div class="card-special-line">${card.special.meter} ${sign}${card.special.amount}</div>`;
   }
-  return parts.join(", ");
+  return leverLines + specialLine;
 }
 
 // Apply a chosen card and run the full tick evaluation.
@@ -422,32 +503,34 @@ function playCard(card) {
   const revoltBefore = state.revoltPressure;
   const fragmentBefore = state.fragmentPressure;
 
-  // 1. Control-ward effects (positive delta) apply instantly and fully, with
-  //    variance rolled on the spot. Influence-ward effects (negative delta)
+  // 1. Resolve each effect's pole to an axis and a signed delta via
+  //    POLE_TABLE. Control-ward deltas (positive) apply instantly and fully,
+  //    with variance rolled on the spot. Influence-ward deltas (negative)
   //    don't apply here — they start a new ramp, which is applied below
   //    alongside every other ramp already in flight.
   card.effects.forEach(e => {
-    if (e.delta > 0) {
-      const rolled = rollVariance(e.delta);
-      const before = state.axes[e.axis];
+    const def = POLE_TABLE[e.pole];
+    const delta = def.sign * e.amount;
+    if (delta > 0) {
+      const rolled = rollVariance(delta);
+      const before = state.axes[def.axis];
       const after = clampAxis(before + rolled);
-      state.axes[e.axis] = after;
-      appliedEffects.push({ axis: e.axis, base: e.delta, rolled, before, after, kind: "instant" });
-    } else if (e.delta < 0) {
+      state.axes[def.axis] = after;
+      appliedEffects.push({ axis: def.axis, base: delta, rolled, before, after, kind: "instant" });
+    } else {
       state.activeRamps.push({
-        axis: e.axis,
+        axis: def.axis,
         remainingTicks: CONFIG.INFLUENCE_RAMP_TICKS,
-        baseAmount: e.delta / CONFIG.INFLUENCE_RAMP_TICKS,
+        baseAmount: delta / CONFIG.INFLUENCE_RAMP_TICKS,
       });
     }
   });
 
-  // Card 19 is the only card with a direct pressure effect. The old design
-  // had one External Pressure meter; now there are two independent meters,
-  // so a negotiated pact's relief is applied to both equally.
-  if (card.pressureDelta) {
-    state.revoltPressure = clampPressure(state.revoltPressure + card.pressureDelta);
-    state.fragmentPressure = clampPressure(state.fragmentPressure + card.pressureDelta);
+  // A card's special field (if any) applies directly and instantly to the
+  // one named pressure meter, no variance, on top of any lever effects.
+  if (card.special) {
+    const meterKey = card.special.meter === "RevoltPressure" ? "revoltPressure" : "fragmentPressure";
+    state[meterKey] = clampPressure(state[meterKey] + card.special.amount);
   }
 
   // 2. Apply and decrement every active ramp, including any just started above.
@@ -521,8 +604,8 @@ function playCard(card) {
     const ticksLabel = fx.remainingTicks === 1 ? "1 tick left" : `${fx.remainingTicks} ticks left`;
     return `${fx.axis} ${sign}${fx.rolled} (ramped, ${ticksLabel}, ${baseText}) [${fx.before}→${fx.after}]`;
   }).join("; ") || "(no axis effects this tick)";
-  const pressureNote = card.pressureDelta
-    ? `; both pressure meters direct delta ${card.pressureDelta >= 0 ? "+" : ""}${card.pressureDelta}`
+  const pressureNote = card.special
+    ? `; ${card.special.meter} ${card.special.amount >= 0 ? "+" : ""}${card.special.amount}`
     : "";
 
   state.log.unshift({
@@ -575,18 +658,25 @@ function renderBanner() {
   `;
 }
 
+// Convert an axis value (AXIS_MIN..AXIS_MAX) to a left-position percentage
+// (0%..100%) along the bar track.
+function axisToPercent(v) {
+  return ((v - CONFIG.AXIS_MIN) / (CONFIG.AXIS_MAX - CONFIG.AXIS_MIN)) * 100;
+}
+
 function renderAxes() {
   const container = document.getElementById("axesContainer");
   container.innerHTML = AXES.map(a => {
     const v = state.axes[a.key];
-    const center = CONFIG.AXIS_START;   // bars fill outward from this centered marker
+    const centerPct = axisToPercent(CONFIG.AXIS_START);   // bars fill outward from this centered marker
+    const valuePct = axisToPercent(v);
     // Fill runs from the center to the value: leftward (toward Influence,
     // below center) or rightward (toward Control, above center).
-    const fillLeftPct = v >= center ? center : v;
-    const fillWidthPct = Math.abs(v - center);
-    const fillClass = v >= center ? "axis-fill-control" : "axis-fill-influence";
-    const zoneControlPct = CONFIG.WIN_CONTROL_THRESHOLD;
-    const zoneInfluencePct = CONFIG.WIN_INFLUENCE_THRESHOLD;
+    const fillLeftPct = v >= CONFIG.AXIS_START ? centerPct : valuePct;
+    const fillWidthPct = Math.abs(valuePct - centerPct);
+    const fillClass = v >= CONFIG.AXIS_START ? "axis-fill-control" : "axis-fill-influence";
+    const zoneControlPct = axisToPercent(CONFIG.WIN_CONTROL_THRESHOLD);
+    const zoneInfluencePct = axisToPercent(CONFIG.WIN_INFLUENCE_THRESHOLD);
     return `
       <div class="axis">
         <div class="axis-labels">
@@ -611,6 +701,8 @@ function renderPressureMeters() {
   document.getElementById("revoltFill").style.width = `${state.revoltPressure}%`;
   document.getElementById("fragmentValue").textContent = `${state.fragmentPressure} / ${CONFIG.PRESSURE_MAX}`;
   document.getElementById("fragmentFill").style.width = `${state.fragmentPressure}%`;
+  document.getElementById("revoltCountLabel").textContent = `Axes at ${CONFIG.CONTROL_EXTREME} right now`;
+  document.getElementById("fragmentCountLabel").textContent = `Axes at ${CONFIG.INFLUENCE_EXTREME} right now`;
 
   const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
   const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
@@ -629,13 +721,16 @@ function renderCards() {
     container.innerHTML = `<div class="card-flavor">Run over. Press Restart to draft again.</div>`;
     return;
   }
-  container.innerHTML = state.currentDraft.map((card, i) => `
-    <button class="card" data-index="${i}">
-      <div class="card-name">${card.name}</div>
-      <div class="card-effect">${formatEffect(card)}</div>
-      <div class="card-flavor">${card.flavor}</div>
-    </button>
-  `).join("");
+  container.innerHTML = state.currentDraft.map((card, i) => {
+    const cls = classifyCard(card);
+    return `
+      <button class="card card-${cls}" data-index="${i}">
+        <div class="card-name">${card.name}</div>
+        <div class="card-effects">${formatCardEffects(card)}</div>
+        <div class="card-flavor">${card.flavor}</div>
+      </button>
+    `;
+  }).join("");
   container.querySelectorAll(".card").forEach(btn => {
     btn.addEventListener("click", () => {
       const idx = Number(btn.dataset.index);
@@ -656,8 +751,8 @@ function renderLog() {
       <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
       Effects: ${entry.effectsSummary}${entry.pressureNote}<br>
       Axes now: ${entry.axesSummary}<br>
-      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at 100: ${entry.controlMaxCount}) |
-      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at 0: ${entry.influenceMaxCount})<br>
+      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.CONTROL_EXTREME}: ${entry.controlMaxCount}) |
+      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${CONFIG.INFLUENCE_EXTREME}: ${entry.influenceMaxCount})<br>
       Win-hold streak: ${entry.winStreak}
     </div>
   `).join("");
