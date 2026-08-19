@@ -11,19 +11,145 @@
     background: #1b1b1f;
     color: #e8e8ec;
     margin: 0;
-    padding: 20px;
+    padding: 0;
   }
   h1 { font-size: 20px; margin: 0 0 4px 0; }
   .sub { color: #9a9aa5; font-size: 13px; margin-bottom: 16px; }
 
-  .layout {
-    display: grid;
-    grid-template-columns: 380px 1fr;
-    gap: 20px;
-    align-items: start;
+  /* ---- App shell: a phone-width column, centered on any screen ---- */
+  .app-shell {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
   }
-  @media (max-width: 900px) {
-    .layout { grid-template-columns: 1fr; }
+  .app-title {
+    padding: 14px 14px 6px;
+  }
+  .app-title h1 { font-size: 17px; }
+  .app-title .sub { margin-bottom: 0; font-size: 12px; }
+
+  /* ---- Sticky top bar: tick, win-hold streak, Log/Restart, run-end banner ---- */
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #1b1b1f;
+    border-bottom: 1px solid #35353d;
+    padding: 8px 14px;
+  }
+  .topbar-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .topbar-stat { font-size: 12px; color: #9a9aa5; white-space: nowrap; }
+  .topbar-stat b { color: #e8e8ec; font-size: 13px; margin-left: 4px; }
+  .topbar-spacer { flex: 1; }
+  .topbar-btn {
+    background: #3a3a44;
+    color: #e8e8ec;
+    border: 1px solid #4d4d59;
+    border-radius: 6px;
+    padding: 8px 12px;
+    min-height: 44px;   /* comfortable touch target on mobile */
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .topbar-btn:hover { background: #45454f; }
+
+  /* ---- Tab content ---- */
+  .tab-content {
+    flex: 1;
+    padding: 12px 14px 20px;
+  }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* ---- Bottom nav: fixed-height, thumb-reachable, large tap targets ---- */
+  .bottom-nav {
+    position: sticky;
+    bottom: 0;
+    z-index: 10;
+    display: flex;
+    background: #232329;
+    border-top: 1px solid #35353d;
+  }
+  .nav-btn {
+    flex: 1;
+    background: transparent;
+    color: #9a9aa5;
+    border: none;
+    padding: 10px 4px;
+    min-height: 56px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .nav-btn.active { color: #ffd166; border-top: 3px solid #ffd166; padding-top: 7px; }
+
+  /* ---- Compact pressure meters (Empire tab) ---- */
+  .meter-compact-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .meter-label { font-size: 12px; color: #c7c7d1; width: 62px; flex-shrink: 0; }
+  .meter-compact-row .pressure-track { flex: 1; margin-top: 0; }
+  .meter-compact-row b { font-size: 12px; width: 62px; text-align: right; flex-shrink: 0; }
+  .meter-count-row {
+    font-size: 10px;
+    color: #7a7a84;
+    display: flex;
+    justify-content: space-between;
+    margin-top: -4px;
+    margin-bottom: 6px;
+  }
+
+  /* ---- Log bottom sheet ---- */
+  .log-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
+  .log-modal.hidden { display: none; }
+  .log-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+  }
+  .log-modal-sheet {
+    position: relative;
+    max-width: 480px;
+    width: 100%;
+    margin: 0 auto;
+    max-height: 80vh;
+    background: #1b1b1f;
+    border: 1px solid #35353d;
+    border-bottom: none;
+    border-radius: 12px 12px 0 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .log-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px;
+    border-bottom: 1px solid #35353d;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .log-modal-sheet .log {
+    flex: 1;
+    max-height: none;
+    padding: 0 14px;
   }
 
   .panel {
@@ -235,13 +361,9 @@
     vertical-align: middle;
   }
   .territory-grid {
-    display: grid;
-    grid-template-columns: minmax(280px, 460px) 1fr;
-    gap: 20px;
-    align-items: start;
-  }
-  @media (max-width: 900px) {
-    .territory-grid { grid-template-columns: 1fr; }
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
   }
   .territory-map {
     width: 100%;
@@ -300,10 +422,11 @@
     border: 1px solid #4d4d59;
     border-radius: 6px;
     padding: 8px 14px;
-    min-height: 40px;
+    min-height: 44px;   /* comfortable touch target on mobile */
     font-size: 13px;
     cursor: pointer;
     margin-right: 8px;
+    margin-bottom: 8px;
   }
   .confirm-attack-btn { background: #5a1f28; border-color: #7a2f38; }
   .confirm-attack-btn:hover { background: #6a232d; }
@@ -312,113 +435,137 @@
 </head>
 <body>
 
-<h1>Ideology Draft Simulator</h1>
-<div class="sub">Test harness for the ideology-draft / lever-balance mechanic. All state is in-memory; nothing persists.</div>
+<div class="app-shell">
 
-<div id="bannerContainer"></div>
-
-<div class="layout">
-  <div class="left-col">
-
-    <div class="panel">
-      <h2>Levers</h2>
-      <div id="axesContainer"></div>
-    </div>
-
-    <div class="panel">
-      <h2>Pressure Meters</h2>
-      <div class="stat-line"><span>RevoltPressure (Control side)</span><b id="revoltValue">0 / 100</b></div>
-      <div class="pressure-track"><div class="pressure-fill pressure-fill-revolt" id="revoltFill" style="width:0%"></div></div>
-      <div class="status-row">
-        <span id="revoltCountLabel">Axes at 100 right now</span>
-        <span id="revoltCount">0</span>
-      </div>
-
-      <div class="stat-line" style="margin-top:14px;"><span>FragmentPressure (Influence side)</span><b id="fragmentValue">0 / 100</b></div>
-      <div class="pressure-track"><div class="pressure-fill pressure-fill-fragment" id="fragmentFill" style="width:0%"></div></div>
-      <div class="status-row">
-        <span id="fragmentCountLabel">Axes at -100 right now</span>
-        <span id="fragmentCount">0</span>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Population &amp; Resources</h2>
-      <div class="stat-line">
-        <span>Population</span>
-        <b id="populationValue">0</b>
-      </div>
-      <div class="status-row"><span id="populationTrend">—</span></div>
-
-      <div class="stat-line" style="margin-top:10px;"><span>Food Stockpile</span><b id="foodValue">0 / 200</b></div>
-      <div class="axis-track food-track">
-        <div class="axis-fill" id="foodFill" style="left:0%; width:0%"></div>
-        <div class="axis-zone-marker" id="foodGrowthMarker"></div>
-      </div>
-      <div class="status-row"><span>Zone</span><span id="foodZoneLabel">—</span></div>
-
-      <div class="stat-line" style="margin-top:10px;"><span>Stone</span><b id="stoneValue">0 / 300</b></div>
-      <div class="pressure-track"><div class="pressure-fill resource-fill-stone" id="stoneFill" style="width:0%"></div></div>
-
-      <div class="stat-line" style="margin-top:8px;"><span>Metal</span><b id="metalValue">0 / 300</b></div>
-      <div class="pressure-track"><div class="pressure-fill resource-fill-metal" id="metalFill" style="width:0%"></div></div>
-
-      <div class="stat-line" style="margin-top:8px;"><span>Energy</span><b id="energyValue">0 / 300</b></div>
-      <div class="pressure-track"><div class="pressure-fill resource-fill-energy" id="energyFill" style="width:0%"></div></div>
-
-      <div class="tier-badges" style="margin-top:12px;">
-        <span class="tier-badge" id="tierConstructionBadge">Construction &amp; Military: Locked</span>
-        <span class="tier-badge" id="tierConsumerBadge">Consumer Products: Locked</span>
-        <span class="tier-badge" id="tierServicesBadge">Services: Locked</span>
-      </div>
-      <div class="stat-line" style="margin-top:8px;">
-        <span>Research Points</span>
-        <b id="researchValue">locked</b>
-      </div>
-    </div>
-
-    <div class="panel">
-      <h2>Run Status</h2>
-      <div class="stat-line"><span>Tick</span><b id="tickValue">0</b></div>
-      <div class="stat-line"><span>Win-hold streak</span><b id="streakValue">0 / 3</b></div>
-      <button class="restart" id="restartBtn">Restart</button>
-    </div>
-
+  <div class="app-title">
+    <h1>Ideology Draft Simulator</h1>
+    <div class="sub">Test harness for the ideology-draft / lever-balance mechanic. All state is in-memory; nothing persists.</div>
   </div>
 
-  <div class="right-col">
-
-    <div class="panel">
-      <h2>Draft — pick one card</h2>
-      <div class="cards" id="cardsContainer"></div>
+  <div class="topbar">
+    <div class="topbar-row">
+      <div class="topbar-stat">Tick<b id="tickValue">0</b></div>
+      <div class="topbar-stat">Streak<b id="streakValue">0 / 3</b></div>
+      <div class="topbar-spacer"></div>
+      <button class="topbar-btn" id="logBtn">Log</button>
+      <button class="topbar-btn" id="restartBtn">Restart</button>
     </div>
+    <div id="bannerContainer"></div>
+  </div>
 
-    <div class="panel">
-      <h2>Log</h2>
+  <main class="tab-content">
+
+    <section id="tabEmpire" class="tab-panel active">
+      <div class="panel">
+        <h2>Levers</h2>
+        <div id="axesContainer"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Pressure</h2>
+        <div class="meter-compact-row">
+          <span class="meter-label">Revolt</span>
+          <div class="pressure-track"><div class="pressure-fill pressure-fill-revolt" id="revoltFill" style="width:0%"></div></div>
+          <b id="revoltValue">0 / 100</b>
+        </div>
+        <div class="meter-count-row">
+          <span id="revoltCountLabel">Axes at 90+ right now</span>
+          <span id="revoltCount">0</span>
+        </div>
+        <div class="meter-compact-row">
+          <span class="meter-label">Fragment</span>
+          <div class="pressure-track"><div class="pressure-fill pressure-fill-fragment" id="fragmentFill" style="width:0%"></div></div>
+          <b id="fragmentValue">0 / 100</b>
+        </div>
+        <div class="meter-count-row">
+          <span id="fragmentCountLabel">Axes at -90 or below right now</span>
+          <span id="fragmentCount">0</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Draft — pick one card</h2>
+        <div class="cards" id="cardsContainer"></div>
+      </div>
+    </section>
+
+    <section id="tabEconomy" class="tab-panel">
+      <div class="panel">
+        <h2>Population</h2>
+        <div class="stat-line">
+          <span>Population</span>
+          <b id="populationValue">0</b>
+        </div>
+        <div class="status-row"><span id="populationTrend">—</span></div>
+      </div>
+
+      <div class="panel">
+        <h2>Food</h2>
+        <div class="stat-line"><span>Food Stockpile</span><b id="foodValue">0 / 200</b></div>
+        <div class="axis-track food-track">
+          <div class="axis-fill" id="foodFill" style="left:0%; width:0%"></div>
+          <div class="axis-zone-marker" id="foodGrowthMarker"></div>
+        </div>
+        <div class="status-row"><span>Zone</span><span id="foodZoneLabel">—</span></div>
+      </div>
+
+      <div class="panel">
+        <h2>Raw Resources</h2>
+        <div class="stat-line"><span>Stone</span><b id="stoneValue">0 / 300</b></div>
+        <div class="pressure-track"><div class="pressure-fill resource-fill-stone" id="stoneFill" style="width:0%"></div></div>
+
+        <div class="stat-line" style="margin-top:8px;"><span>Metal</span><b id="metalValue">0 / 300</b></div>
+        <div class="pressure-track"><div class="pressure-fill resource-fill-metal" id="metalFill" style="width:0%"></div></div>
+
+        <div class="stat-line" style="margin-top:8px;"><span>Energy</span><b id="energyValue">0 / 300</b></div>
+        <div class="pressure-track"><div class="pressure-fill resource-fill-energy" id="energyFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Industry Tiers</h2>
+        <div class="tier-badges">
+          <span class="tier-badge" id="tierConstructionBadge">Construction &amp; Military: Locked</span>
+          <span class="tier-badge" id="tierConsumerBadge">Consumer Products: Locked</span>
+          <span class="tier-badge" id="tierServicesBadge">Services: Locked</span>
+        </div>
+        <div class="stat-line" style="margin-top:8px;">
+          <span>Research Points</span>
+          <b id="researchValue">locked</b>
+        </div>
+      </div>
+    </section>
+
+    <section id="tabMap" class="tab-panel">
+      <div class="panel">
+        <h2>Territory &amp; Rival Empires</h2>
+        <div class="territory-legend" id="territoryLegend"></div>
+        <div class="territory-grid">
+          <svg id="mapSvg" viewBox="0 0 440 440" class="territory-map"></svg>
+          <div id="strengthPanel" class="strength-panel"></div>
+          <div id="attackPreview" class="attack-preview"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="nav-btn active" data-tab="tabEmpire">Empire</button>
+    <button class="nav-btn" data-tab="tabEconomy">Economy</button>
+    <button class="nav-btn" data-tab="tabMap">Map</button>
+  </nav>
+
+  <div class="log-modal hidden" id="logModal">
+    <div class="log-modal-backdrop" id="logModalBackdrop"></div>
+    <div class="log-modal-sheet">
+      <div class="log-modal-header">
+        <span>Log</span>
+        <button class="topbar-btn" id="logCloseBtn">Close</button>
+      </div>
       <div class="log" id="logContainer"></div>
     </div>
+  </div>
 
-  </div>
-</div>
-
-<div class="panel">
-  <h2>Territory &amp; Rival Empires</h2>
-  <div class="territory-legend">
-    <span class="legend-dot" style="background:#ffd166;"></span>Player
-    <span class="legend-dot" style="background:#e05563;"></span>Rival 1 (Aggressive)
-    <span class="legend-dot" style="background:#c77dff;"></span>Rival 2 (Moderate)
-    <span class="legend-dot" style="background:#5fb8e0;"></span>Rival 3 (Passive)
-    <span class="legend-dot" style="background:#4a4a52;"></span>Neutral
-  </div>
-  <div class="territory-grid">
-    <div>
-      <svg id="mapSvg" viewBox="0 0 440 440" class="territory-map"></svg>
-    </div>
-    <div class="territory-side">
-      <div id="strengthPanel" class="strength-panel"></div>
-      <div id="attackPreview" class="attack-preview"></div>
-    </div>
-  </div>
 </div>
 
 <script>
@@ -532,6 +679,12 @@ CONFIG.MAP = {
   STRENGTH_MILITARY_AXIS_WEIGHT: 1,  // player Strength includes max(0, military axis) times this weight
   STRENGTH_INDUSTRY_BONUS: 30,       // added to player Strength once Construction & Military is unlocked
 
+  // How many rivals (in rival1, rival2, rival3 order) are actually in this
+  // match. 1 = standard, 2 = challenge, 3 = hardest. Any rival beyond this
+  // count is never instantiated at all — its home node just starts as
+  // ordinary neutral territory, absorbable like any other.
+  ACTIVE_RIVAL_COUNT: 1,
+
   RIVAL_BASE_STRENGTH: 40,                                  // starting Strength for every rival
   RIVAL_GROWTH_RATE: { passive: 0.7, moderate: 1.2, aggressive: 2.0 },  // added to a rival's Strength every tick
   RIVAL_PERSONALITY: { rival1: "aggressive", rival2: "moderate", rival3: "passive" },
@@ -560,6 +713,26 @@ const NODE_POSITIONS = {
 const RIVAL_IDS = ["rival1", "rival2", "rival3"];
 const EMPIRE_LABEL = { player: "Player", rival1: "Rival 1", rival2: "Rival 2", rival3: "Rival 3", neutral: "Neutral" };
 const EMPIRE_COLOR = { player: "#ffd166", rival1: "#e05563", rival2: "#c77dff", rival3: "#5fb8e0", neutral: "#4a4a52" };
+
+// The rivals actually instantiated this match — the first ACTIVE_RIVAL_COUNT
+// entries of RIVAL_IDS. Every rival-facing loop (growth, absorption
+// claimants, AI attacks, the Strength status panel, the defeated-rivals
+// check) iterates this list, never the full RIVAL_IDS, so an inactive rival
+// never appears anywhere as a participant.
+const ACTIVE_RIVALS = RIVAL_IDS.slice(0, CONFIG.MAP.ACTIVE_RIVAL_COUNT);
+
+function isRivalActive(rivalId) {
+  return ACTIVE_RIVALS.includes(rivalId);
+}
+
+// A node counts as a true capital (home-defense bonus applies, capturing it
+// eliminates that empire) only if it's the player's, or an ACTIVE rival's.
+// An inactive rival's "capital" node starts neutral and is never anyone's
+// real capital, even after someone else absorbs or conquers it later.
+function isCapitalNode(node) {
+  if (node.type !== "home") return false;
+  return node.homeOf === "player" || isRivalActive(node.homeOf);
+}
 
 // ============================================================================
 // AXIS DEFINITIONS — pole names shown in the UI for each axis key.
@@ -726,15 +899,48 @@ function freshState() {
     // stockpiles that triggered it later drop back down.
     tierUnlocked: { constructionMilitary: false, consumerProducts: false, services: false },
 
-    // Territory: node 0 = player, 1/2/3 = the matching rival's capital, 4-9 neutral.
-    nodeOwner: { 0: "player", 1: "rival1", 2: "rival2", 3: "rival3", 4: "neutral", 5: "neutral", 6: "neutral", 7: "neutral", 8: "neutral", 9: "neutral" },
+    // Territory: node 0 = player. Each ACTIVE rival owns its capital; any
+    // rival beyond ACTIVE_RIVAL_COUNT starts with its capital as ordinary
+    // neutral territory instead, since it was never instantiated.
+    nodeOwner: buildInitialNodeOwner(),
     nodeAbsorptionProgress: buildInitialAbsorptionProgress(),
     playerStrength: 0,       // recomputed fresh every tick, see computePlayerStrength()
-    rivalStrength: { rival1: CONFIG.MAP.RIVAL_BASE_STRENGTH, rival2: CONFIG.MAP.RIVAL_BASE_STRENGTH, rival3: CONFIG.MAP.RIVAL_BASE_STRENGTH },
-    rivalDefeated: { rival1: false, rival2: false, rival3: false },
+    rivalStrength: buildInitialRivalStrength(),   // one entry per active rival only
+    rivalDefeated: buildInitialRivalDefeated(),   // one entry per active rival only
     pendingAttack: null,   // node id the player has queued an attack against; resolves on the next tick
     previewTarget: null,   // node id currently shown in the attack-preview panel, not yet confirmed
   };
+}
+
+function buildInitialNodeOwner() {
+  const owner = {};
+  CONFIG.MAP.NODES.forEach(node => {
+    if (node.type === "home" && (node.homeOf === "player" || isRivalActive(node.homeOf))) {
+      owner[node.id] = node.homeOf;
+    } else {
+      owner[node.id] = "neutral";
+    }
+  });
+  return owner;
+}
+
+function buildInitialRivalStrength() {
+  const strength = {};
+  ACTIVE_RIVALS.forEach(r => { strength[r] = CONFIG.MAP.RIVAL_BASE_STRENGTH; });
+  return strength;
+}
+
+function buildInitialRivalDefeated() {
+  const defeated = {};
+  ACTIVE_RIVALS.forEach(r => { defeated[r] = false; });
+  return defeated;
+}
+
+// True once every active rival's capital has been captured. Used both to
+// gate the lever-spread win condition (Change 1) and for the "locked"
+// win-hold streak display before that point.
+function allActiveRivalsDefeated() {
+  return ACTIVE_RIVALS.every(r => state.rivalDefeated[r]);
 }
 
 // { player: 0, rival1: 0, rival2: 0, rival3: 0 } for every node — only
@@ -854,7 +1060,7 @@ function computeCombatMath(attackerStrength, targetNodeId) {
   const targetNode = CONFIG.MAP.NODES.find(n => n.id === targetNodeId);
   const defenderId = state.nodeOwner[targetNodeId];
   const defenderStrength = defenderId === "player" ? state.playerStrength : rivalEffectiveStrength(defenderId);
-  const homeBonus = targetNode.type === "home" ? M.HOME_DEFENSE_BONUS : 0;
+  const homeBonus = isCapitalNode(targetNode) ? M.HOME_DEFENSE_BONUS : 0;
   const effectiveDefense = defenderStrength + homeBonus;
   const diff = attackerStrength - effectiveDefense;
   let band;
@@ -899,7 +1105,7 @@ function resolveCombat(attackerId, attackerStrength, targetNodeId, combatNotes, 
   );
 
   if (attackerWins) {
-    const capturedHome = targetNode.type === "home";
+    const capturedHome = isCapitalNode(targetNode);
     state.nodeOwner[targetNodeId] = attackerId;
     if (capturedHome && defenderId !== "player") {
       state.rivalDefeated[defenderId] = true;
@@ -1047,20 +1253,20 @@ function playCard(card) {
   //    with the owned-node bonus folded in fresh wherever Strength is used.
   const M = CONFIG.MAP;
   state.playerStrength = computePlayerStrength();
-  RIVAL_IDS.forEach(rid => {
+  ACTIVE_RIVALS.forEach(rid => {
     if (state.rivalDefeated[rid]) return;
     state.rivalStrength[rid] += M.RIVAL_GROWTH_RATE[M.RIVAL_PERSONALITY[rid]];
   });
 
-  // 9. Neutral absorption. Any claimant (player, or a non-defeated rival)
-  //    owning a node adjacent to a neutral one adds its driving stat /
+  // 9. Neutral absorption. Any claimant (player, or a non-defeated active
+  //    rival) owning a node adjacent to a neutral one adds its driving stat /
   //    ABSORPTION_POP_DIVISOR to that node's progress this tick. Checked in
   //    player-then-rival1-2-3 order, so a same-tick threshold crossing is
   //    resolved by that priority; progress resets once the node is claimed.
   const absorptionNotes = [];
   M.NODES.forEach(node => {
     if (state.nodeOwner[node.id] !== "neutral") return;
-    const claimants = ["player", ...RIVAL_IDS.filter(r => !state.rivalDefeated[r])];
+    const claimants = ["player", ...ACTIVE_RIVALS.filter(r => !state.rivalDefeated[r])];
     for (const claimant of claimants) {
       const ownsAdjacent = M.ADJACENCY[node.id].some(adjId => state.nodeOwner[adjId] === claimant);
       if (!ownsAdjacent) continue;
@@ -1083,12 +1289,12 @@ function playCard(card) {
   }
   state.pendingAttack = null;
 
-  // 11. Resolve each non-defeated rival's attack, in order rival1/2/3: look
-  //     at every node adjacent to one it owns that it doesn't (excluding
-  //     neutral nodes — those are claimed only by automatic absorption, not
-  //     combat), attack the single best-margin candidate if that margin
-  //     clears its personality's required attack margin.
-  RIVAL_IDS.forEach(rid => {
+  // 11. Resolve each non-defeated active rival's attack, in order
+  //     rival1/2/3: look at every node adjacent to one it owns that it
+  //     doesn't (excluding neutral nodes — those are claimed only by
+  //     automatic absorption, not combat), attack the single best-margin
+  //     candidate if that margin clears its personality's required margin.
+  ACTIVE_RIVALS.forEach(rid => {
     if (state.rivalDefeated[rid]) return;
     const ownedNodeIds = M.NODES.filter(n => state.nodeOwner[n.id] === rid).map(n => n.id);
     const candidateIds = new Set();
@@ -1128,7 +1334,9 @@ function playCard(card) {
 
   // 9. If not lost, check win. An axis sitting at an extreme still counts
   //    toward a pinned pole here — it just also feeds a pressure meter.
-  //    Victory now also requires population to be holding above the minimum.
+  //    Victory requires population above the minimum, AND every active
+  //    rival already defeated — no partial win-hold progress accumulates
+  //    before that, even if the lever spread would otherwise qualify.
   let controlCount = 0, influenceCount = 0;
   const controlAxes = [], influenceAxes = [];
   AXES.forEach(a => {
@@ -1137,7 +1345,7 @@ function playCard(card) {
     if (v <= CONFIG.WIN_INFLUENCE_THRESHOLD) { influenceCount++; influenceAxes.push(a.influenceLabel); }
   });
   const leverQualifies = (controlCount >= 2 && influenceCount >= 1) || (influenceCount >= 2 && controlCount >= 1);
-  const qualifies = leverQualifies && state.population >= R.POPULATION_WIN_MINIMUM;
+  const qualifies = leverQualifies && state.population >= R.POPULATION_WIN_MINIMUM && allActiveRivalsDefeated();
 
   if (!outcome) {
     if (qualifies) {
@@ -1333,7 +1541,9 @@ function renderResources() {
 
 function renderStatus() {
   document.getElementById("tickValue").textContent = state.tick;
-  document.getElementById("streakValue").textContent = `${state.winStreak} / ${CONFIG.WIN_HOLD_TICKS}`;
+  document.getElementById("streakValue").textContent = allActiveRivalsDefeated()
+    ? `${state.winStreak} / ${CONFIG.WIN_HOLD_TICKS}`
+    : "locked";
 }
 
 function renderCards() {
@@ -1389,9 +1599,23 @@ function renderLog() {
 }
 
 function renderTerritory() {
+  renderLegend();
   renderMap();
   renderStrengthStatus();
   renderAttackPreview();
+}
+
+// Legend only lists the player and the rivals actually in this match, so a
+// lower ACTIVE_RIVAL_COUNT never shows a color for a rival that isn't playing.
+function renderLegend() {
+  const el = document.getElementById("territoryLegend");
+  let html = `<span class="legend-dot" style="background:${EMPIRE_COLOR.player};"></span>Player`;
+  ACTIVE_RIVALS.forEach(rid => {
+    const personality = CONFIG.MAP.RIVAL_PERSONALITY[rid];
+    html += ` <span class="legend-dot" style="background:${EMPIRE_COLOR[rid]};"></span>${EMPIRE_LABEL[rid]} (${personality.charAt(0).toUpperCase() + personality.slice(1)})`;
+  });
+  html += ` <span class="legend-dot" style="background:${EMPIRE_COLOR.neutral};"></span>Neutral`;
+  el.innerHTML = html;
 }
 
 function renderMap() {
@@ -1416,7 +1640,12 @@ function renderMap() {
     const pos = NODE_POSITIONS[node.id];
     const owner = state.nodeOwner[node.id];
     const color = EMPIRE_COLOR[owner];
-    const radius = node.type === "home" ? R_HOME : R_REGULAR;
+    const isCapital = isCapitalNode(node);
+    const radius = isCapital ? R_HOME : R_REGULAR;
+    // An inactive rival's capital node was never instantiated, so it never
+    // owns anything and never appears in nodeOwner as its own id — but its
+    // label should still read as ordinary territory, not "Rival N Capital".
+    const displayLabel = (node.type === "home" && !isCapital) ? `Territory ${node.id}` : node.label;
     // Attackable = owned by a rival (defeated or not — their remaining land
     // is still fair game) and adjacent to a node the player owns. Neutral
     // nodes are never attack targets, they're claimed only by absorption.
@@ -1428,7 +1657,7 @@ function renderMap() {
     html += `<circle cx="${pos.x}" cy="${pos.y}" r="${radius}" fill="${color}" stroke="${strokeColor}" stroke-width="${isPreviewed ? 3 : isAttackable ? 2.5 : 1.5}"` +
       (isAttackable ? ` class="map-node-attackable" data-node-id="${node.id}"` : "") + ` />`;
 
-    html += `<text x="${pos.x}" y="${pos.y - radius - 8}" text-anchor="middle" class="map-node-label">${node.label}</text>`;
+    html += `<text x="${pos.x}" y="${pos.y - radius - 8}" text-anchor="middle" class="map-node-label">${displayLabel}</text>`;
 
     if (owner === "neutral") {
       html += `<text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle" class="map-node-sublabel">Neutral</text>`;
@@ -1457,12 +1686,12 @@ function renderMap() {
 function renderStrengthStatus() {
   const el = document.getElementById("strengthPanel");
   let html = `<div class="stat-line"><span>Player (${countOwnedNonHomeNodes("player")} territories)</span><b>Strength ${state.playerStrength}</b></div>`;
-  RIVAL_IDS.forEach(rid => {
+  ACTIVE_RIVALS.forEach(rid => {
     if (state.rivalDefeated[rid]) return;
     const personality = CONFIG.MAP.RIVAL_PERSONALITY[rid];
     html += `<div class="stat-line"><span style="color:${EMPIRE_COLOR[rid]}">${EMPIRE_LABEL[rid]} (${personality}, ${countOwnedNonHomeNodes(rid)} territories)</span><b>Strength ${Math.round(rivalEffectiveStrength(rid))}</b></div>`;
   });
-  const defeated = RIVAL_IDS.filter(r => state.rivalDefeated[r]).map(r => EMPIRE_LABEL[r]);
+  const defeated = ACTIVE_RIVALS.filter(r => state.rivalDefeated[r]).map(r => EMPIRE_LABEL[r]);
   if (defeated.length) {
     html += `<div class="status-row"><span>Defeated</span><span>${defeated.join(", ")}</span></div>`;
   }
@@ -1529,6 +1758,27 @@ function startNewRun() {
 }
 
 document.getElementById("restartBtn").addEventListener("click", startNewRun);
+
+// ============================================================================
+// TAB NAVIGATION AND LOG SHEET — presentation only, no game state involved.
+// ============================================================================
+document.querySelectorAll(".nav-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const targetId = btn.dataset.tab;
+    document.querySelectorAll(".tab-panel").forEach(panel => {
+      panel.classList.toggle("active", panel.id === targetId);
+    });
+    document.querySelectorAll(".nav-btn").forEach(navBtn => {
+      navBtn.classList.toggle("active", navBtn === btn);
+    });
+  });
+});
+
+function openLog() { document.getElementById("logModal").classList.remove("hidden"); }
+function closeLog() { document.getElementById("logModal").classList.add("hidden"); }
+document.getElementById("logBtn").addEventListener("click", openLog);
+document.getElementById("logCloseBtn").addEventListener("click", closeLog);
+document.getElementById("logModalBackdrop").addEventListener("click", closeLog);
 
 startNewRun();
 </script>
