@@ -68,9 +68,11 @@
   }
   .axis-fill {
     position: absolute;
-    top: 0; bottom: 0; left: 0;
-    background: linear-gradient(90deg, #6fb6ff, #ff8f6f);
+    top: 0; bottom: 0;
+    /* left/width are set inline per-axis, filling outward from the center marker */
   }
+  .axis-fill-control { background: #ff8f6f; }
+  .axis-fill-influence { background: #6fb6ff; }
   .axis-mid {
     position: absolute;
     left: 50%;
@@ -96,9 +98,10 @@
   }
   .pressure-fill {
     height: 100%;
-    background: #e0455f;
     transition: width 0.15s ease;
   }
+  .pressure-fill-revolt { background: #ff8f6f; }
+  .pressure-fill-fragment { background: #6fb6ff; }
   .status-row {
     display: flex;
     justify-content: space-between;
@@ -106,15 +109,6 @@
     font-size: 13px;
     margin-top: 6px;
   }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  .badge-off { background: #2c2c33; color: #8a8a94; }
-  .badge-on { background: #5a1f28; color: #ff9aa8; }
 
   .stat-line {
     display: flex;
@@ -213,12 +207,19 @@
     </div>
 
     <div class="panel">
-      <h2>External Pressure</h2>
-      <div class="stat-line"><span>Pressure</span><b id="pressureValue">0 / 100</b></div>
-      <div class="pressure-track"><div class="pressure-fill" id="pressureFill" style="width:0%"></div></div>
+      <h2>Pressure Meters</h2>
+      <div class="stat-line"><span>RevoltPressure (Control side)</span><b id="revoltValue">0 / 100</b></div>
+      <div class="pressure-track"><div class="pressure-fill pressure-fill-revolt" id="revoltFill" style="width:0%"></div></div>
       <div class="status-row">
-        <span>Fragmented</span>
-        <span id="fragmentedBadge" class="badge badge-off">NO</span>
+        <span>Axes at 100 right now</span>
+        <span id="revoltCount">0</span>
+      </div>
+
+      <div class="stat-line" style="margin-top:14px;"><span>FragmentPressure (Influence side)</span><b id="fragmentValue">0 / 100</b></div>
+      <div class="pressure-track"><div class="pressure-fill pressure-fill-fragment" id="fragmentFill" style="width:0%"></div></div>
+      <div class="status-row">
+        <span>Axes at 0 right now</span>
+        <span id="fragmentCount">0</span>
       </div>
     </div>
 
@@ -255,16 +256,39 @@ const CONFIG = {
   AXIS_MAX: 100,
   AXIS_START: 50,
 
-  LOSS_CONTROL_THRESHOLD: 100,   // any axis hitting this = immediate loss, "Overthrown"
-  LOSS_INFLUENCE_THRESHOLD: 0,   // any axis hitting this = enters "Fragmented" state (not an immediate loss)
+  // An axis sitting exactly at one of these "extreme" values feeds a pressure
+  // meter each tick (see PRESSURE_RATE below). Sitting at an extreme no longer
+  // causes an instant loss by itself, and no longer blocks a win by itself —
+  // it just means one of the two pressure meters below is now ticking up.
+  CONTROL_EXTREME: 100,     // axis == this counts toward RevoltPressure
+  INFLUENCE_EXTREME: 0,     // axis == this counts toward FragmentPressure
 
   WIN_CONTROL_THRESHOLD: 85,     // axis >= this counts as "pinned toward Control" for victory
   WIN_INFLUENCE_THRESHOLD: 15,   // axis <= this counts as "pinned toward Influence" for victory
   WIN_HOLD_TICKS: 3,             // qualifying configuration must hold this many consecutive ticks to win
 
-  EXTERNAL_PRESSURE_MAX: 100,
-  EXTERNAL_PRESSURE_RISE_PER_TICK: 15,   // while Fragmented
-  EXTERNAL_PRESSURE_DECAY_PER_TICK: 10,  // while NOT Fragmented, floor at 0
+  PRESSURE_MAX: 100,   // either meter reaching this ends the run
+  // Per-tick rate for each meter, keyed by how many axes currently sit at
+  // that meter's extreme (0 to 3, since there are only 3 axes). The rate for
+  // 0 axes is negative, so a meter with nothing maxed decays back toward 0.
+  PRESSURE_RATE: {
+    0: -10,  // decay per tick when no axis is at that extreme, floor at 0
+    1: 5,    // slow trickle, one axis maxed
+    2: 12,   // faster, two axes maxed
+    3: 30,   // fast, three axes maxed, forces a response
+  },
+
+  // Ideology effects that push toward the Control pole (positive delta) apply
+  // instantly and fully, as before. Effects that push toward the Influence
+  // pole (negative delta) instead "ramp": spread evenly across this many
+  // ticks, starting on the tick the card is adopted.
+  INFLUENCE_RAMP_TICKS: 3,
+
+  // Every time any portion of a card's effect is actually applied — an
+  // instant application, or one tick of a ramp — the applied amount is
+  // randomized by plus or minus this fraction of that portion's base value,
+  // then rounded to the nearest whole number. Each roll is independent.
+  VARIANCE_FRACTION: 0.2,
 
   CARDS_PER_DRAFT: 3,            // how many distinct cards are offered each tick
 };
@@ -281,7 +305,7 @@ const AXES = [
 // ============================================================================
 // IDEOLOGY CARDS — the pool of 20 draft cards. Transcribed exactly from spec.
 // effects: list of { axis, delta } — positive = toward Control, negative = toward Influence.
-// pressureDelta: optional direct External Pressure modifier (only card 19 uses this).
+// pressureDelta: optional direct modifier applied to both pressure meters (only card 19 uses this).
 // ============================================================================
 const CARDS = [
   { id: 1,  name: "Conscription Doctrine",         effects: [{ axis: "military", delta: 15 }],
@@ -336,8 +360,9 @@ function freshState() {
   AXES.forEach(a => { axes[a.key] = CONFIG.AXIS_START; });
   return {
     axes,
-    pressure: 0,
-    fragmented: false,
+    revoltPressure: 0,
+    fragmentPressure: 0,
+    activeRamps: [],    // list of { axis, remainingTicks, baseAmount } — in-flight Influence-ward effects
     tick: 0,
     winStreak: 0,
     gameOver: false,
@@ -349,6 +374,18 @@ function freshState() {
 
 function clampAxis(v) {
   return Math.max(CONFIG.AXIS_MIN, Math.min(CONFIG.AXIS_MAX, v));
+}
+
+function clampPressure(v) {
+  return Math.max(0, Math.min(CONFIG.PRESSURE_MAX, v));
+}
+
+// Randomize one applied portion by +/- VARIANCE_FRACTION of its base value,
+// rounded to the nearest whole number. Rolled independently every call.
+function rollVariance(baseAmount) {
+  const spread = Math.abs(baseAmount) * CONFIG.VARIANCE_FRACTION;
+  const roll = baseAmount + (Math.random() * 2 - 1) * spread;
+  return Math.round(roll);
 }
 
 // Draw CONFIG.CARDS_PER_DRAFT distinct cards at random from the pool.
@@ -367,66 +404,94 @@ function formatEffect(card) {
   const parts = card.effects.map(e => {
     const axisDef = AXES.find(a => a.key === e.axis);
     const sign = e.delta >= 0 ? "+" : "";
-    return `${axisDef.controlLabel} ${sign}${e.delta}`;
+    const tag = e.delta >= 0 ? "instant" : `ramped over ${CONFIG.INFLUENCE_RAMP_TICKS} ticks`;
+    return `${axisDef.controlLabel} ${sign}${e.delta} (${tag})`;
   });
   if (card.pressureDelta) {
     const sign = card.pressureDelta >= 0 ? "+" : "";
-    parts.push(`Pressure ${sign}${card.pressureDelta}`);
+    parts.push(`both pressure meters ${sign}${card.pressureDelta}`);
   }
   return parts.join(", ");
 }
 
-// Apply a chosen card and run the full tick evaluation per the spec's exact order.
+// Apply a chosen card and run the full tick evaluation.
 function playCard(card) {
   if (state.gameOver) return;
 
-  const beforeAxes = Object.assign({}, state.axes);
-  const beforePressure = state.pressure;
+  const appliedEffects = [];   // every axis change actually applied this tick, instant or ramped
+  const revoltBefore = state.revoltPressure;
+  const fragmentBefore = state.fragmentPressure;
 
-  // 1. Apply the chosen card's axis effect(s), clamp each axis to [0, 100].
-  const appliedDeltas = [];
+  // 1. Control-ward effects (positive delta) apply instantly and fully, with
+  //    variance rolled on the spot. Influence-ward effects (negative delta)
+  //    don't apply here — they start a new ramp, which is applied below
+  //    alongside every other ramp already in flight.
   card.effects.forEach(e => {
-    const newVal = clampAxis(state.axes[e.axis] + e.delta);
-    appliedDeltas.push({ axis: e.axis, delta: e.delta, before: state.axes[e.axis], after: newVal });
-    state.axes[e.axis] = newVal;
+    if (e.delta > 0) {
+      const rolled = rollVariance(e.delta);
+      const before = state.axes[e.axis];
+      const after = clampAxis(before + rolled);
+      state.axes[e.axis] = after;
+      appliedEffects.push({ axis: e.axis, base: e.delta, rolled, before, after, kind: "instant" });
+    } else if (e.delta < 0) {
+      state.activeRamps.push({
+        axis: e.axis,
+        remainingTicks: CONFIG.INFLUENCE_RAMP_TICKS,
+        baseAmount: e.delta / CONFIG.INFLUENCE_RAMP_TICKS,
+      });
+    }
   });
+
+  // Card 19 is the only card with a direct pressure effect. The old design
+  // had one External Pressure meter; now there are two independent meters,
+  // so a negotiated pact's relief is applied to both equally.
   if (card.pressureDelta) {
-    state.pressure = Math.max(0, Math.min(CONFIG.EXTERNAL_PRESSURE_MAX, state.pressure + card.pressureDelta));
+    state.revoltPressure = clampPressure(state.revoltPressure + card.pressureDelta);
+    state.fragmentPressure = clampPressure(state.fragmentPressure + card.pressureDelta);
   }
 
-  // 2. Update Fragmented: true if ANY axis is exactly at LOSS_INFLUENCE_THRESHOLD (0).
-  state.fragmented = AXES.some(a => state.axes[a.key] === CONFIG.LOSS_INFLUENCE_THRESHOLD);
+  // 2. Apply and decrement every active ramp, including any just started above.
+  const stillActive = [];
+  state.activeRamps.forEach(ramp => {
+    const rolled = rollVariance(ramp.baseAmount);
+    const before = state.axes[ramp.axis];
+    const after = clampAxis(before + rolled);
+    state.axes[ramp.axis] = after;
+    ramp.remainingTicks -= 1;
+    appliedEffects.push({
+      axis: ramp.axis, base: ramp.baseAmount, rolled, before, after,
+      kind: "ramped", remainingTicks: ramp.remainingTicks,
+    });
+    if (ramp.remainingTicks > 0) stillActive.push(ramp);
+  });
+  state.activeRamps = stillActive;
 
-  // 3. Update External Pressure based on Fragmented state.
-  if (state.fragmented) {
-    state.pressure = Math.min(CONFIG.EXTERNAL_PRESSURE_MAX, state.pressure + CONFIG.EXTERNAL_PRESSURE_RISE_PER_TICK);
-  } else {
-    state.pressure = Math.max(0, state.pressure - CONFIG.EXTERNAL_PRESSURE_DECAY_PER_TICK);
-  }
+  // 3. Count axes sitting exactly at each extreme, update both pressure meters.
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  state.revoltPressure = clampPressure(state.revoltPressure + CONFIG.PRESSURE_RATE[controlMaxCount]);
+  state.fragmentPressure = clampPressure(state.fragmentPressure + CONFIG.PRESSURE_RATE[influenceMaxCount]);
 
   state.tick += 1;
 
-  // 4. Check loss, in order: Overthrown first, then Absorbed.
+  // 4. Check loss: either meter reaching PRESSURE_MAX ends the run.
   let outcome = null;
-  const overthrownAxis = AXES.find(a => state.axes[a.key] === CONFIG.LOSS_CONTROL_THRESHOLD);
-  if (overthrownAxis) {
+  if (state.revoltPressure >= CONFIG.PRESSURE_MAX) {
     outcome = { result: "loss", reason: "Overthrown",
-      detail: `${overthrownAxis.controlLabel} reached ${CONFIG.LOSS_CONTROL_THRESHOLD}.` };
-  } else if (state.fragmented && state.pressure >= CONFIG.EXTERNAL_PRESSURE_MAX) {
+      detail: `RevoltPressure reached ${state.revoltPressure}.` };
+  } else if (state.fragmentPressure >= CONFIG.PRESSURE_MAX) {
     outcome = { result: "loss", reason: "Absorbed",
-      detail: `Fragmented with External Pressure at ${state.pressure}.` };
+      detail: `FragmentPressure reached ${state.fragmentPressure}.` };
   }
 
-  // 5. If not lost, check win.
-  // Note: an axis sitting exactly at LOSS_CONTROL_THRESHOLD (100) or
-  // LOSS_INFLUENCE_THRESHOLD (0) can never count toward a win — those values
-  // only ever produce a loss or a Fragmented state, never a "pinned" pole.
+  // 5. If not lost, check win. An axis sitting at an extreme still counts
+  //    toward a pinned pole here — it just also feeds a pressure meter.
   let controlCount = 0, influenceCount = 0;
   const controlAxes = [], influenceAxes = [];
   AXES.forEach(a => {
     const v = state.axes[a.key];
-    if (v >= CONFIG.WIN_CONTROL_THRESHOLD && v < CONFIG.LOSS_CONTROL_THRESHOLD) { controlCount++; controlAxes.push(a.controlLabel); }
-    if (v <= CONFIG.WIN_INFLUENCE_THRESHOLD && v > CONFIG.LOSS_INFLUENCE_THRESHOLD) { influenceCount++; influenceAxes.push(a.influenceLabel); }
+    if (v >= CONFIG.WIN_CONTROL_THRESHOLD) { controlCount++; controlAxes.push(a.controlLabel); }
+    if (v <= CONFIG.WIN_INFLUENCE_THRESHOLD) { influenceCount++; influenceAxes.push(a.influenceLabel); }
   });
   const qualifies = (controlCount >= 2 && influenceCount >= 1) || (influenceCount >= 2 && controlCount >= 1);
 
@@ -442,20 +507,33 @@ function playCard(card) {
     }
   }
 
-  // Build log entry describing exactly what happened this tick.
+  // Build a log entry that fully explains this tick: every applied effect
+  // (instant or ramped) with its base and actual rolled amount, both
+  // pressure meters before/after, and the resulting axis values.
   const axesSummary = AXES.map(a => `${a.key}=${state.axes[a.key]}`).join(", ");
-  const deltasSummary = appliedDeltas.map(d => `${d.axis} ${d.delta >= 0 ? "+" : ""}${d.delta} (${d.before}→${d.after})`).join(", ");
-  const pressureNote = card.pressureDelta ? `, pressure card delta ${card.pressureDelta >= 0 ? "+" : ""}${card.pressureDelta}` : "";
+  const effectsSummary = appliedEffects.map(fx => {
+    const sign = fx.rolled >= 0 ? "+" : "";
+    const baseSign = fx.base >= 0 ? "+" : "";
+    const baseText = `base ${baseSign}${Math.round(fx.base * 10) / 10}`;
+    if (fx.kind === "instant") {
+      return `${fx.axis} ${sign}${fx.rolled} (instant, ${baseText}) [${fx.before}→${fx.after}]`;
+    }
+    const ticksLabel = fx.remainingTicks === 1 ? "1 tick left" : `${fx.remainingTicks} ticks left`;
+    return `${fx.axis} ${sign}${fx.rolled} (ramped, ${ticksLabel}, ${baseText}) [${fx.before}→${fx.after}]`;
+  }).join("; ") || "(no axis effects this tick)";
+  const pressureNote = card.pressureDelta
+    ? `; both pressure meters direct delta ${card.pressureDelta >= 0 ? "+" : ""}${card.pressureDelta}`
+    : "";
 
   state.log.unshift({
     tick: state.tick,
     cardName: card.name,
-    deltasSummary,
-    axesSummary,
-    pressureBefore: beforePressure,
-    pressureAfter: state.pressure,
-    fragmented: state.fragmented,
+    effectsSummary,
     pressureNote,
+    axesSummary,
+    revoltBefore, revoltAfter: state.revoltPressure,
+    fragmentBefore, fragmentAfter: state.fragmentPressure,
+    controlMaxCount, influenceMaxCount,
     winStreak: state.winStreak,
   });
 
@@ -475,7 +553,7 @@ function playCard(card) {
 function render() {
   renderBanner();
   renderAxes();
-  renderPressure();
+  renderPressureMeters();
   renderStatus();
   renderCards();
   renderLog();
@@ -501,6 +579,12 @@ function renderAxes() {
   const container = document.getElementById("axesContainer");
   container.innerHTML = AXES.map(a => {
     const v = state.axes[a.key];
+    const center = CONFIG.AXIS_START;   // bars fill outward from this centered marker
+    // Fill runs from the center to the value: leftward (toward Influence,
+    // below center) or rightward (toward Control, above center).
+    const fillLeftPct = v >= center ? center : v;
+    const fillWidthPct = Math.abs(v - center);
+    const fillClass = v >= center ? "axis-fill-control" : "axis-fill-influence";
     const zoneControlPct = CONFIG.WIN_CONTROL_THRESHOLD;
     const zoneInfluencePct = CONFIG.WIN_INFLUENCE_THRESHOLD;
     return `
@@ -512,7 +596,7 @@ function renderAxes() {
         </div>
         <div class="axis-value">${v}</div>
         <div class="axis-track">
-          <div class="axis-fill" style="width:${v}%"></div>
+          <div class="axis-fill ${fillClass}" style="left:${fillLeftPct}%; width:${fillWidthPct}%"></div>
           <div class="axis-mid"></div>
           <div class="axis-zone-marker" style="left:${zoneControlPct}%"></div>
           <div class="axis-zone-marker" style="left:${zoneInfluencePct}%"></div>
@@ -522,12 +606,16 @@ function renderAxes() {
   }).join("");
 }
 
-function renderPressure() {
-  document.getElementById("pressureValue").textContent = `${state.pressure} / ${CONFIG.EXTERNAL_PRESSURE_MAX}`;
-  document.getElementById("pressureFill").style.width = `${state.pressure}%`;
-  const badge = document.getElementById("fragmentedBadge");
-  badge.textContent = state.fragmented ? "YES" : "NO";
-  badge.className = "badge " + (state.fragmented ? "badge-on" : "badge-off");
+function renderPressureMeters() {
+  document.getElementById("revoltValue").textContent = `${state.revoltPressure} / ${CONFIG.PRESSURE_MAX}`;
+  document.getElementById("revoltFill").style.width = `${state.revoltPressure}%`;
+  document.getElementById("fragmentValue").textContent = `${state.fragmentPressure} / ${CONFIG.PRESSURE_MAX}`;
+  document.getElementById("fragmentFill").style.width = `${state.fragmentPressure}%`;
+
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  document.getElementById("revoltCount").textContent = controlMaxCount;
+  document.getElementById("fragmentCount").textContent = influenceMaxCount;
 }
 
 function renderStatus() {
@@ -566,9 +654,11 @@ function renderLog() {
   container.innerHTML = state.log.map(entry => `
     <div class="log-entry">
       <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
-      Deltas: ${entry.deltasSummary}${entry.pressureNote}<br>
+      Effects: ${entry.effectsSummary}${entry.pressureNote}<br>
       Axes now: ${entry.axesSummary}<br>
-      Pressure: ${entry.pressureBefore} → ${entry.pressureAfter} | Fragmented: ${entry.fragmented ? "YES" : "NO"} | Win-hold streak: ${entry.winStreak}
+      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at 100: ${entry.controlMaxCount}) |
+      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at 0: ${entry.influenceMaxCount})<br>
+      Win-hold streak: ${entry.winStreak}
     </div>
   `).join("");
 }
