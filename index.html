@@ -318,18 +318,20 @@ const CONFIG = {
   AXIS_MAX: 100,
   AXIS_START: 0,
 
-  // An axis sitting exactly at one of these "extreme" values feeds a pressure
-  // meter each tick (see PRESSURE_RATE below). Sitting at an extreme no longer
-  // causes an instant loss by itself, and no longer blocks a win by itself —
-  // it just means one of the two pressure meters below is now ticking up.
-  CONTROL_EXTREME: 100,      // axis == this counts toward RevoltPressure
-  INFLUENCE_EXTREME: -100,   // axis == this counts toward FragmentPressure
+  // An axis sitting at or beyond this trigger point (on either side) feeds a
+  // pressure meter each tick (see PRESSURE_RATE below): axis >= this counts
+  // toward RevoltPressure, axis <= -this counts toward FragmentPressure. This
+  // is a band, not just the true 100/-100 extreme — the whole top 10% of the
+  // axis range is "dangerous," not only the exact max. Sitting in this band
+  // doesn't cause an instant loss by itself, and doesn't block a win by
+  // itself — it just means a pressure meter is now ticking up.
+  AXIS_PRESSURE_TRIGGER: 90,
 
   WIN_CONTROL_THRESHOLD: 70,     // axis >= this counts as "pinned toward Control" for victory
   WIN_INFLUENCE_THRESHOLD: -70,  // axis <= this counts as "pinned toward Influence" for victory
   WIN_HOLD_TICKS: 3,             // qualifying configuration must hold this many consecutive ticks to win
 
-  PRESSURE_MAX: 90,   // either meter reaching this ends the run
+  PRESSURE_MAX: 100,   // either meter reaching this ends the run
   // Per-tick rate for each meter, keyed by how many axes currently sit at
   // that meter's extreme (0 to 3, since there are only 3 axes). The rate for
   // 0 axes is negative, so a meter with nothing maxed decays back toward 0.
@@ -373,9 +375,9 @@ CONFIG.RESOURCE = {
   FOOD_FAMINE_THRESHOLD: 0,      // stockpile at or below this = famine this tick
   FOOD_GROWTH_THRESHOLD: 100,    // stockpile at or above this = population grows this tick
 
-  STONE_BASE_PRODUCTION: 8,
-  METAL_BASE_PRODUCTION: 6,
-  ENERGY_BASE_PRODUCTION: 10,
+  STONE_BASE_PRODUCTION: 20,   // playtest-speed rate, was 8
+  METAL_BASE_PRODUCTION: 15,   // playtest-speed rate, was 6
+  ENERGY_BASE_PRODUCTION: 25,  // playtest-speed rate, was 10
   RESOURCE_STOCKPILE_MAX: 300,   // cap for Stone, Metal, Energy
 
   TIER2_STONE_THRESHOLD: 100,
@@ -683,9 +685,11 @@ function playCard(card) {
   });
   state.activeRamps = stillActive;
 
-  // 3. Count axes sitting exactly at each extreme, update both pressure meters.
-  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
-  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  // 3. Count axes sitting in the pressure-trigger band on each side, update
+  //    both pressure meters. This is a band (>= trigger, not == extreme), so
+  //    axes anywhere in the top 10% count, not only the true 100/-100 max.
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] >= CONFIG.AXIS_PRESSURE_TRIGGER).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] <= -CONFIG.AXIS_PRESSURE_TRIGGER).length;
   state.revoltPressure = clampPressure(state.revoltPressure + CONFIG.PRESSURE_RATE[controlMaxCount]);
   state.fragmentPressure = clampPressure(state.fragmentPressure + CONFIG.PRESSURE_RATE[influenceMaxCount]);
 
@@ -917,11 +921,11 @@ function renderPressureMeters() {
   document.getElementById("revoltFill").style.width = `${state.revoltPressure}%`;
   document.getElementById("fragmentValue").textContent = `${state.fragmentPressure} / ${CONFIG.PRESSURE_MAX}`;
   document.getElementById("fragmentFill").style.width = `${state.fragmentPressure}%`;
-  document.getElementById("revoltCountLabel").textContent = `Axes at ${CONFIG.CONTROL_EXTREME} right now`;
-  document.getElementById("fragmentCountLabel").textContent = `Axes at ${CONFIG.INFLUENCE_EXTREME} right now`;
+  document.getElementById("revoltCountLabel").textContent = `Axes at ${CONFIG.AXIS_PRESSURE_TRIGGER}+ right now`;
+  document.getElementById("fragmentCountLabel").textContent = `Axes at ${-CONFIG.AXIS_PRESSURE_TRIGGER} or below right now`;
 
-  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
-  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] >= CONFIG.AXIS_PRESSURE_TRIGGER).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] <= -CONFIG.AXIS_PRESSURE_TRIGGER).length;
   document.getElementById("revoltCount").textContent = controlMaxCount;
   document.getElementById("fragmentCount").textContent = influenceMaxCount;
 }
@@ -1010,8 +1014,8 @@ function renderLog() {
       <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
       Effects: ${entry.effectsSummary}${entry.pressureNote}${entry.resourceEffectNote}<br>
       Axes now: ${entry.axesSummary}<br>
-      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.CONTROL_EXTREME}: ${entry.controlMaxCount}) |
-      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${CONFIG.INFLUENCE_EXTREME}: ${entry.influenceMaxCount})<br>
+      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.AXIS_PRESSURE_TRIGGER}+: ${entry.controlMaxCount}) |
+      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${-CONFIG.AXIS_PRESSURE_TRIGGER} or below: ${entry.influenceMaxCount})<br>
       Food: ${entry.foodBefore} + ${entry.foodProduction} production − ${entry.foodConsumption} consumption → ${entry.foodAfter} (${entry.foodZone} zone)<br>
       Population: ${entry.populationBefore} → ${entry.populationAfter} — ${entry.populationReason}<br>
       Stone: ${entry.stoneBefore}→${entry.stoneAfter} | Metal: ${entry.metalBefore}→${entry.metalAfter} | Energy: ${entry.energyBefore}→${entry.energyAfter}
