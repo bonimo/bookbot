@@ -216,6 +216,98 @@
     cursor: pointer;
   }
   button.restart:hover { background: #45454f; }
+
+  /* ---- Territory map ---- */
+  .territory-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 14px;
+    font-size: 12px;
+    color: #c7c7d1;
+    margin-bottom: 12px;
+  }
+  .legend-dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 2px;
+    vertical-align: middle;
+  }
+  .territory-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 460px) 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+  @media (max-width: 900px) {
+    .territory-grid { grid-template-columns: 1fr; }
+  }
+  .territory-map {
+    width: 100%;
+    height: auto;
+    background: #17171b;
+    border-radius: 8px;
+    border: 1px solid #35353d;
+  }
+  .territory-map text {
+    font-family: -apple-system, Segoe UI, Arial, sans-serif;
+    pointer-events: none;   /* let clicks pass through to the node circle beneath */
+  }
+  .map-node-label { font-size: 11px; font-weight: 600; fill: #c7c7d1; }
+  .map-node-sublabel {
+    font-size: 10px;
+    font-weight: 700;
+    fill: #ffffff;
+    paint-order: stroke;
+    stroke: #17171b;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .map-node-progress {
+    font-size: 9px;
+    fill: #e8e8ec;
+    paint-order: stroke;
+    stroke: #17171b;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .map-node-attackable { cursor: pointer; }
+
+  .strength-panel { margin-bottom: 14px; }
+  .attack-preview-box {
+    background: #2a2a31;
+    border: 1px solid #3d3d46;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 13px;
+  }
+  .attack-preview-box .stat-line { margin-bottom: 4px; }
+  .attack-band {
+    text-align: center;
+    padding: 6px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    margin: 8px 0;
+  }
+  .band-win { background: rgba(30, 132, 73, 0.25); color: #a8ffbf; }
+  .band-loss { background: rgba(176, 58, 46, 0.25); color: #ff9aa8; }
+  .band-uncertain { background: rgba(232, 179, 84, 0.2); color: #ffcf8f; }
+  .confirm-attack-btn, .cancel-attack-btn {
+    background: #3a3a44;
+    color: #e8e8ec;
+    border: 1px solid #4d4d59;
+    border-radius: 6px;
+    padding: 8px 14px;
+    min-height: 40px;
+    font-size: 13px;
+    cursor: pointer;
+    margin-right: 8px;
+  }
+  .confirm-attack-btn { background: #5a1f28; border-color: #7a2f38; }
+  .confirm-attack-btn:hover { background: #6a232d; }
+  .cancel-attack-btn:hover { background: #45454f; }
 </style>
 </head>
 <body>
@@ -309,6 +401,26 @@
   </div>
 </div>
 
+<div class="panel">
+  <h2>Territory &amp; Rival Empires</h2>
+  <div class="territory-legend">
+    <span class="legend-dot" style="background:#ffd166;"></span>Player
+    <span class="legend-dot" style="background:#e05563;"></span>Rival 1 (Aggressive)
+    <span class="legend-dot" style="background:#c77dff;"></span>Rival 2 (Moderate)
+    <span class="legend-dot" style="background:#5fb8e0;"></span>Rival 3 (Passive)
+    <span class="legend-dot" style="background:#4a4a52;"></span>Neutral
+  </div>
+  <div class="territory-grid">
+    <div>
+      <svg id="mapSvg" viewBox="0 0 440 440" class="territory-map"></svg>
+    </div>
+    <div class="territory-side">
+      <div id="strengthPanel" class="strength-panel"></div>
+      <div id="attackPreview" class="attack-preview"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 // ============================================================================
 // CONFIG — every tunable number for the simulator lives here.
@@ -318,18 +430,20 @@ const CONFIG = {
   AXIS_MAX: 100,
   AXIS_START: 0,
 
-  // An axis sitting exactly at one of these "extreme" values feeds a pressure
-  // meter each tick (see PRESSURE_RATE below). Sitting at an extreme no longer
-  // causes an instant loss by itself, and no longer blocks a win by itself —
-  // it just means one of the two pressure meters below is now ticking up.
-  CONTROL_EXTREME: 100,      // axis == this counts toward RevoltPressure
-  INFLUENCE_EXTREME: -100,   // axis == this counts toward FragmentPressure
+  // An axis sitting at or beyond this trigger point (on either side) feeds a
+  // pressure meter each tick (see PRESSURE_RATE below): axis >= this counts
+  // toward RevoltPressure, axis <= -this counts toward FragmentPressure. This
+  // is a band, not just the true 100/-100 extreme — the whole top 10% of the
+  // axis range is "dangerous," not only the exact max. Sitting in this band
+  // doesn't cause an instant loss by itself, and doesn't block a win by
+  // itself — it just means a pressure meter is now ticking up.
+  AXIS_PRESSURE_TRIGGER: 90,
 
   WIN_CONTROL_THRESHOLD: 70,     // axis >= this counts as "pinned toward Control" for victory
   WIN_INFLUENCE_THRESHOLD: -70,  // axis <= this counts as "pinned toward Influence" for victory
   WIN_HOLD_TICKS: 3,             // qualifying configuration must hold this many consecutive ticks to win
 
-  PRESSURE_MAX: 90,   // either meter reaching this ends the run
+  PRESSURE_MAX: 100,   // either meter reaching this ends the run
   // Per-tick rate for each meter, keyed by how many axes currently sit at
   // that meter's extreme (0 to 3, since there are only 3 axes). The rate for
   // 0 axes is negative, so a meter with nothing maxed decays back toward 0.
@@ -373,9 +487,9 @@ CONFIG.RESOURCE = {
   FOOD_FAMINE_THRESHOLD: 0,      // stockpile at or below this = famine this tick
   FOOD_GROWTH_THRESHOLD: 100,    // stockpile at or above this = population grows this tick
 
-  STONE_BASE_PRODUCTION: 8,
-  METAL_BASE_PRODUCTION: 6,
-  ENERGY_BASE_PRODUCTION: 10,
+  STONE_BASE_PRODUCTION: 20,   // playtest-speed rate, was 8
+  METAL_BASE_PRODUCTION: 15,   // playtest-speed rate, was 6
+  ENERGY_BASE_PRODUCTION: 25,  // playtest-speed rate, was 10
   RESOURCE_STOCKPILE_MAX: 300,   // cap for Stone, Metal, Energy
 
   TIER2_STONE_THRESHOLD: 100,
@@ -386,6 +500,66 @@ CONFIG.RESOURCE = {
   SERVICES_RESEARCH_PER_TICK: 5,
   SERVICES_CAPITAL_WEIGHT_PER_TICK: 3,  // passive nudge toward Capital on the Capital<>Labor axis, once Services is unlocked
 };
+
+// ============================================================================
+// TERRITORY / RIVAL EMPIRE CONFIG — node-graph map, absorption, Strength, and
+// combat constants. All placeholders for now, expect to retune.
+// ============================================================================
+CONFIG.MAP = {
+  NODES: [
+    { id: 0, label: "Player Capital", type: "home", homeOf: "player" },
+    { id: 1, label: "Rival 1 Capital", type: "home", homeOf: "rival1" },
+    { id: 2, label: "Rival 2 Capital", type: "home", homeOf: "rival2" },
+    { id: 3, label: "Rival 3 Capital", type: "home", homeOf: "rival3" },
+    { id: 4, label: "Territory 4", type: "neutral" },
+    { id: 5, label: "Territory 5", type: "neutral" },
+    { id: 6, label: "Territory 6", type: "neutral" },
+    { id: 7, label: "Territory 7", type: "neutral" },
+    { id: 8, label: "Territory 8", type: "neutral" },
+    { id: 9, label: "Territory 9", type: "neutral" },
+  ],
+  ADJACENCY: {
+    0: [4, 5], 1: [5, 6], 2: [6, 7], 3: [7, 8],
+    4: [0, 5, 9], 5: [0, 1, 4, 6], 6: [1, 2, 5, 7], 7: [2, 3, 6, 8], 8: [3, 7, 9], 9: [4, 8],
+  },
+
+  HOME_DEFENSE_BONUS: 15,       // added to a defender's Strength only when the attacked node is a capital
+  OWNED_NODE_STRENGTH_BONUS: 5, // per non-home node an empire owns, folded into its one national Strength value
+
+  ABSORPTION_POP_DIVISOR: 10,   // a claimant's driving stat / this = progress added per tick, per adjacent neutral node
+  ABSORPTION_THRESHOLD: 100,    // progress needed to flip a neutral node to that claimant
+
+  STRENGTH_MILITARY_AXIS_WEIGHT: 1,  // player Strength includes max(0, military axis) times this weight
+  STRENGTH_INDUSTRY_BONUS: 30,       // added to player Strength once Construction & Military is unlocked
+
+  RIVAL_BASE_STRENGTH: 40,                                  // starting Strength for every rival
+  RIVAL_GROWTH_RATE: { passive: 0.7, moderate: 1.2, aggressive: 2.0 },  // added to a rival's Strength every tick
+  RIVAL_PERSONALITY: { rival1: "aggressive", rival2: "moderate", rival3: "passive" },
+  RIVAL_ATTACK_MARGIN: { passive: 15, moderate: 5, aggressive: -3 },    // Strength margin a rival needs before it attacks
+
+  COMBAT_CERTAIN_MARGIN: 3,          // beyond this Strength margin, the outcome is certain either way
+  COMBAT_UNCERTAIN_WIN_CHANCE: 0.5,  // attacker's win chance when the margin is within COMBAT_CERTAIN_MARGIN
+
+  SHOCK_MAGNITUDE_REGULAR: 10,  // random-axis, random-sign nudge when the player wins a regular node
+  SHOCK_MAGNITUDE_HOME: 25,     // same, but larger when the player captures a rival's capital
+};
+
+// Fixed screen coordinates for the node-and-line map diagram (viewBox 0 0
+// 440 440). Nodes 4-9 sit on a hexagon (4 top-left, 5 top, 6 top-right,
+// 7 bottom-right, 8 bottom, 9 bottom-left); nodes 0-3 sit just outside the
+// hex edge they connect to (0 near 4/5, 1 near 5/6, 2 near 6/7, 3 near 7/8).
+const NODE_POSITIONS = {
+  0: { x: 127, y: 60 },  1: { x: 313, y: 60 },  2: { x: 405, y: 220 }, 3: { x: 313, y: 380 },
+  4: { x: 107, y: 155 }, 5: { x: 220, y: 90 },  6: { x: 333, y: 155 },
+  7: { x: 333, y: 285 }, 8: { x: 220, y: 350 }, 9: { x: 107, y: 285 },
+};
+
+// Display names and colors for the player and the three rivals — used on
+// the map, the Strength status panel, and every territory log line. Keep in
+// sync with the legend markup in the HTML below.
+const RIVAL_IDS = ["rival1", "rival2", "rival3"];
+const EMPIRE_LABEL = { player: "Player", rival1: "Rival 1", rival2: "Rival 2", rival3: "Rival 3", neutral: "Neutral" };
+const EMPIRE_COLOR = { player: "#ffd166", rival1: "#e05563", rival2: "#c77dff", rival3: "#5fb8e0", neutral: "#4a4a52" };
 
 // ============================================================================
 // AXIS DEFINITIONS — pole names shown in the UI for each axis key.
@@ -551,7 +725,24 @@ function freshState() {
     // Sticky unlock flags — once true, a tier stays unlocked even if the
     // stockpiles that triggered it later drop back down.
     tierUnlocked: { constructionMilitary: false, consumerProducts: false, services: false },
+
+    // Territory: node 0 = player, 1/2/3 = the matching rival's capital, 4-9 neutral.
+    nodeOwner: { 0: "player", 1: "rival1", 2: "rival2", 3: "rival3", 4: "neutral", 5: "neutral", 6: "neutral", 7: "neutral", 8: "neutral", 9: "neutral" },
+    nodeAbsorptionProgress: buildInitialAbsorptionProgress(),
+    playerStrength: 0,       // recomputed fresh every tick, see computePlayerStrength()
+    rivalStrength: { rival1: CONFIG.MAP.RIVAL_BASE_STRENGTH, rival2: CONFIG.MAP.RIVAL_BASE_STRENGTH, rival3: CONFIG.MAP.RIVAL_BASE_STRENGTH },
+    rivalDefeated: { rival1: false, rival2: false, rival3: false },
+    pendingAttack: null,   // node id the player has queued an attack against; resolves on the next tick
+    previewTarget: null,   // node id currently shown in the attack-preview panel, not yet confirmed
   };
+}
+
+// { player: 0, rival1: 0, rival2: 0, rival3: 0 } for every node — only
+// meaningful for nodes that are currently neutral, harmless elsewhere.
+function buildInitialAbsorptionProgress() {
+  const progress = {};
+  CONFIG.MAP.NODES.forEach(n => { progress[n.id] = { player: 0, rival1: 0, rival2: 0, rival3: 0 }; });
+  return progress;
 }
 
 function clampRange(v, min, max) {
@@ -621,6 +812,104 @@ function formatCardEffects(card) {
   return leverLines + specialLine + resourceLine;
 }
 
+// ============================================================================
+// TERRITORY / COMBAT HELPERS
+// ============================================================================
+
+// The node id that is a given empire's capital ("player", "rival1", ...).
+function homeNodeIdOf(empireId) {
+  const node = CONFIG.MAP.NODES.find(n => n.homeOf === empireId);
+  return node ? node.id : null;
+}
+
+// How many nodes an empire currently owns, not counting its own capital.
+function countOwnedNonHomeNodes(empireId) {
+  const home = homeNodeIdOf(empireId);
+  return CONFIG.MAP.NODES.filter(n => state.nodeOwner[n.id] === empireId && n.id !== home).length;
+}
+
+// Player Strength is fully recomputed from scratch every tick — no
+// persistent growth term, unlike rivals (see the tick loop below).
+function computePlayerStrength() {
+  const M = CONFIG.MAP;
+  return Math.max(0, state.axes.military) * M.STRENGTH_MILITARY_AXIS_WEIGHT
+    + (state.tierUnlocked.constructionMilitary ? M.STRENGTH_INDUSTRY_BONUS : 0)
+    + countOwnedNonHomeNodes("player") * M.OWNED_NODE_STRENGTH_BONUS;
+}
+
+// A rival's stored state.rivalStrength[id] only ever accumulates its
+// passive per-tick growth. The owned-node bonus is never stored into it —
+// it's recomputed fresh here every time "current Strength" is actually
+// needed (combat, absorption, display), so it can never double-count as
+// nodes change hands mid-run.
+function rivalEffectiveStrength(rivalId) {
+  return state.rivalStrength[rivalId] + countOwnedNonHomeNodes(rivalId) * CONFIG.MAP.OWNED_NODE_STRENGTH_BONUS;
+}
+
+// Shared math for "what would this attack look like" — used by the
+// read-only attack-preview UI and by resolveCombat below, so the preview
+// the player sees always matches what actually happens.
+function computeCombatMath(attackerStrength, targetNodeId) {
+  const M = CONFIG.MAP;
+  const targetNode = CONFIG.MAP.NODES.find(n => n.id === targetNodeId);
+  const defenderId = state.nodeOwner[targetNodeId];
+  const defenderStrength = defenderId === "player" ? state.playerStrength : rivalEffectiveStrength(defenderId);
+  const homeBonus = targetNode.type === "home" ? M.HOME_DEFENSE_BONUS : 0;
+  const effectiveDefense = defenderStrength + homeBonus;
+  const diff = attackerStrength - effectiveDefense;
+  let band;
+  if (diff > M.COMBAT_CERTAIN_MARGIN) band = "certain win";
+  else if (diff < -M.COMBAT_CERTAIN_MARGIN) band = "certain loss";
+  else band = "uncertain (50/50)";
+  return { targetNode, defenderId, defenderStrength, homeBonus, effectiveDefense, diff, band };
+}
+
+// Nudge one random axis by a random-sign SHOCK_MAGNITUDE — the "Absorb via
+// Control" cultural shock. Only the player has axes to shock; the three
+// rivals are simplified state with no lever positions of their own, so a
+// rival's combat win never triggers this.
+function applyCulturalShock(attackerId, capturedHome, shockNotes) {
+  if (attackerId !== "player") return;
+  const M = CONFIG.MAP;
+  const axisKey = AXES[Math.floor(Math.random() * AXES.length)].key;
+  const magnitude = capturedHome ? M.SHOCK_MAGNITUDE_HOME : M.SHOCK_MAGNITUDE_REGULAR;
+  const amount = (Math.random() < 0.5 ? -1 : 1) * magnitude;
+  const before = state.axes[axisKey];
+  const after = clampAxis(before + amount);
+  state.axes[axisKey] = after;
+  shockNotes.push(`Absorb via Control: ${axisKey} shocked by ${amount >= 0 ? "+" : ""}${amount} [${before}→${after}].`);
+}
+
+// The one combat function used both by the player's declared attack and by
+// every rival's AI attack below. Mutates nodeOwner/rivalDefeated on a win,
+// applies the cultural shock, and always logs the full comparison so the
+// result is fully explainable regardless of which band it landed in.
+function resolveCombat(attackerId, attackerStrength, targetNodeId, combatNotes, shockNotes, eliminationNotes) {
+  const math = computeCombatMath(attackerStrength, targetNodeId);
+  const { targetNode, defenderId, defenderStrength, homeBonus, effectiveDefense, diff, band } = math;
+  const attackerWins = band === "certain win" ? true
+    : band === "certain loss" ? false
+    : Math.random() < CONFIG.MAP.COMBAT_UNCERTAIN_WIN_CHANCE;
+
+  combatNotes.push(
+    `${EMPIRE_LABEL[attackerId]} attacks ${targetNode.label} (held by ${EMPIRE_LABEL[defenderId]}): ` +
+    `attacker Strength ${attackerStrength} vs effective defense ${effectiveDefense} ` +
+    `(defender ${defenderStrength}${homeBonus ? ` + home bonus ${homeBonus}` : ""}), ` +
+    `diff ${diff >= 0 ? "+" : ""}${diff} (${band}) -> ${attackerWins ? EMPIRE_LABEL[attackerId] + " wins" : EMPIRE_LABEL[defenderId] + " holds"}.`
+  );
+
+  if (attackerWins) {
+    const capturedHome = targetNode.type === "home";
+    state.nodeOwner[targetNodeId] = attackerId;
+    if (capturedHome && defenderId !== "player") {
+      state.rivalDefeated[defenderId] = true;
+      eliminationNotes.push(`${EMPIRE_LABEL[defenderId]} eliminated — capital captured by ${EMPIRE_LABEL[attackerId]}.`);
+    }
+    applyCulturalShock(attackerId, capturedHome, shockNotes);
+  }
+  return attackerWins;
+}
+
 // Apply a chosen card and run the full tick evaluation.
 function playCard(card) {
   if (state.gameOver) return;
@@ -683,9 +972,11 @@ function playCard(card) {
   });
   state.activeRamps = stillActive;
 
-  // 3. Count axes sitting exactly at each extreme, update both pressure meters.
-  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
-  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  // 3. Count axes sitting in the pressure-trigger band on each side, update
+  //    both pressure meters. This is a band (>= trigger, not == extreme), so
+  //    axes anywhere in the top 10% count, not only the true 100/-100 max.
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] >= CONFIG.AXIS_PRESSURE_TRIGGER).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] <= -CONFIG.AXIS_PRESSURE_TRIGGER).length;
   state.revoltPressure = clampPressure(state.revoltPressure + CONFIG.PRESSURE_RATE[controlMaxCount]);
   state.fragmentPressure = clampPressure(state.fragmentPressure + CONFIG.PRESSURE_RATE[influenceMaxCount]);
 
@@ -751,13 +1042,82 @@ function playCard(card) {
     servicesNote = `Services: Capital +${R.SERVICES_CAPITAL_WEIGHT_PER_TICK} (passive) [${capitalBefore}→${state.axes.capital}]; research +${R.SERVICES_RESEARCH_PER_TICK} (total ${state.researchPoints})`;
   }
 
+  // 8. Recompute Strength. Player's is fully fresh every tick; each
+  //    non-defeated rival's base grows a little every tick (persistent),
+  //    with the owned-node bonus folded in fresh wherever Strength is used.
+  const M = CONFIG.MAP;
+  state.playerStrength = computePlayerStrength();
+  RIVAL_IDS.forEach(rid => {
+    if (state.rivalDefeated[rid]) return;
+    state.rivalStrength[rid] += M.RIVAL_GROWTH_RATE[M.RIVAL_PERSONALITY[rid]];
+  });
+
+  // 9. Neutral absorption. Any claimant (player, or a non-defeated rival)
+  //    owning a node adjacent to a neutral one adds its driving stat /
+  //    ABSORPTION_POP_DIVISOR to that node's progress this tick. Checked in
+  //    player-then-rival1-2-3 order, so a same-tick threshold crossing is
+  //    resolved by that priority; progress resets once the node is claimed.
+  const absorptionNotes = [];
+  M.NODES.forEach(node => {
+    if (state.nodeOwner[node.id] !== "neutral") return;
+    const claimants = ["player", ...RIVAL_IDS.filter(r => !state.rivalDefeated[r])];
+    for (const claimant of claimants) {
+      const ownsAdjacent = M.ADJACENCY[node.id].some(adjId => state.nodeOwner[adjId] === claimant);
+      if (!ownsAdjacent) continue;
+      const drivingStat = claimant === "player" ? state.population : rivalEffectiveStrength(claimant);
+      state.nodeAbsorptionProgress[node.id][claimant] += drivingStat / M.ABSORPTION_POP_DIVISOR;
+      if (state.nodeAbsorptionProgress[node.id][claimant] >= M.ABSORPTION_THRESHOLD) {
+        state.nodeOwner[node.id] = claimant;
+        state.nodeAbsorptionProgress[node.id] = { player: 0, rival1: 0, rival2: 0, rival3: 0 };
+        absorptionNotes.push(`${node.label} absorbed by ${EMPIRE_LABEL[claimant]}.`);
+        break;
+      }
+    }
+  });
+
+  // 10. Resolve the player's declared attack, if any, using this tick's
+  //     playerStrength from step 8 (not recomputed after absorption above).
+  const combatNotes = [], shockNotes = [], eliminationNotes = [];
+  if (state.pendingAttack !== null) {
+    resolveCombat("player", state.playerStrength, state.pendingAttack, combatNotes, shockNotes, eliminationNotes);
+  }
+  state.pendingAttack = null;
+
+  // 11. Resolve each non-defeated rival's attack, in order rival1/2/3: look
+  //     at every node adjacent to one it owns that it doesn't (excluding
+  //     neutral nodes — those are claimed only by automatic absorption, not
+  //     combat), attack the single best-margin candidate if that margin
+  //     clears its personality's required attack margin.
+  RIVAL_IDS.forEach(rid => {
+    if (state.rivalDefeated[rid]) return;
+    const ownedNodeIds = M.NODES.filter(n => state.nodeOwner[n.id] === rid).map(n => n.id);
+    const candidateIds = new Set();
+    ownedNodeIds.forEach(id => {
+      M.ADJACENCY[id].forEach(adjId => {
+        if (state.nodeOwner[adjId] !== rid && state.nodeOwner[adjId] !== "neutral") candidateIds.add(adjId);
+      });
+    });
+    let bestNodeId = null, bestMargin = -Infinity;
+    candidateIds.forEach(nodeId => {
+      const margin = computeCombatMath(rivalEffectiveStrength(rid), nodeId).diff;
+      if (margin > bestMargin) { bestMargin = margin; bestNodeId = nodeId; }
+    });
+    if (bestNodeId !== null && bestMargin >= M.RIVAL_ATTACK_MARGIN[M.RIVAL_PERSONALITY[rid]]) {
+      resolveCombat(rid, rivalEffectiveStrength(rid), bestNodeId, combatNotes, shockNotes, eliminationNotes);
+    }
+  });
+
   state.tick += 1;
 
-  // 8. Check loss, in order: population collapse, then either pressure meter.
+  // 12. Check loss, in order: population collapse, player capital lost,
+  //     then either pressure meter.
   let outcome = null;
   if (state.population <= 0) {
     outcome = { result: "loss", reason: "Collapse",
       detail: `Population reached 0.` };
+  } else if (state.nodeOwner[0] !== "player") {
+    outcome = { result: "loss", reason: "Conquered",
+      detail: `The player capital was captured by ${EMPIRE_LABEL[state.nodeOwner[0]]}.` };
   } else if (state.revoltPressure >= CONFIG.PRESSURE_MAX) {
     outcome = { result: "loss", reason: "Overthrown",
       detail: `RevoltPressure reached ${state.revoltPressure}.` };
@@ -833,6 +1193,7 @@ function playCard(card) {
     populationBefore, populationAfter: state.population, populationReason,
     tierUnlockNotes,
     servicesNote,
+    absorptionNotes, combatNotes, eliminationNotes, shockNotes,
   });
 
   if (outcome) {
@@ -840,7 +1201,7 @@ function playCard(card) {
     state.outcome = outcome;
     state.currentDraft = [];
   } else {
-    // 10. Draw the next 3 cards and continue.
+    // 13. Draw the next 3 cards and continue.
     state.currentDraft = drawCards();
   }
 }
@@ -856,6 +1217,7 @@ function render() {
   renderStatus();
   renderCards();
   renderLog();
+  renderTerritory();
 }
 
 function renderBanner() {
@@ -917,11 +1279,11 @@ function renderPressureMeters() {
   document.getElementById("revoltFill").style.width = `${state.revoltPressure}%`;
   document.getElementById("fragmentValue").textContent = `${state.fragmentPressure} / ${CONFIG.PRESSURE_MAX}`;
   document.getElementById("fragmentFill").style.width = `${state.fragmentPressure}%`;
-  document.getElementById("revoltCountLabel").textContent = `Axes at ${CONFIG.CONTROL_EXTREME} right now`;
-  document.getElementById("fragmentCountLabel").textContent = `Axes at ${CONFIG.INFLUENCE_EXTREME} right now`;
+  document.getElementById("revoltCountLabel").textContent = `Axes at ${CONFIG.AXIS_PRESSURE_TRIGGER}+ right now`;
+  document.getElementById("fragmentCountLabel").textContent = `Axes at ${-CONFIG.AXIS_PRESSURE_TRIGGER} or below right now`;
 
-  const controlMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.CONTROL_EXTREME).length;
-  const influenceMaxCount = AXES.filter(a => state.axes[a.key] === CONFIG.INFLUENCE_EXTREME).length;
+  const controlMaxCount = AXES.filter(a => state.axes[a.key] >= CONFIG.AXIS_PRESSURE_TRIGGER).length;
+  const influenceMaxCount = AXES.filter(a => state.axes[a.key] <= -CONFIG.AXIS_PRESSURE_TRIGGER).length;
   document.getElementById("revoltCount").textContent = controlMaxCount;
   document.getElementById("fragmentCount").textContent = influenceMaxCount;
 }
@@ -1010,16 +1372,151 @@ function renderLog() {
       <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
       Effects: ${entry.effectsSummary}${entry.pressureNote}${entry.resourceEffectNote}<br>
       Axes now: ${entry.axesSummary}<br>
-      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.CONTROL_EXTREME}: ${entry.controlMaxCount}) |
-      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${CONFIG.INFLUENCE_EXTREME}: ${entry.influenceMaxCount})<br>
+      RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.AXIS_PRESSURE_TRIGGER}+: ${entry.controlMaxCount}) |
+      FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${-CONFIG.AXIS_PRESSURE_TRIGGER} or below: ${entry.influenceMaxCount})<br>
       Food: ${entry.foodBefore} + ${entry.foodProduction} production − ${entry.foodConsumption} consumption → ${entry.foodAfter} (${entry.foodZone} zone)<br>
       Population: ${entry.populationBefore} → ${entry.populationAfter} — ${entry.populationReason}<br>
       Stone: ${entry.stoneBefore}→${entry.stoneAfter} | Metal: ${entry.metalBefore}→${entry.metalAfter} | Energy: ${entry.energyBefore}→${entry.energyAfter}
       ${entry.tierUnlockNotes.length ? `<br>${entry.tierUnlockNotes.join(" ")}` : ""}
       ${entry.servicesNote ? `<br>${entry.servicesNote}` : ""}
+      ${entry.absorptionNotes.length ? `<br>${entry.absorptionNotes.join(" ")}` : ""}
+      ${entry.combatNotes.length ? `<br>${entry.combatNotes.join("<br>")}` : ""}
+      ${entry.eliminationNotes.length ? `<br>${entry.eliminationNotes.join(" ")}` : ""}
+      ${entry.shockNotes.length ? `<br>${entry.shockNotes.join(" ")}` : ""}
       <br>Win-hold streak: ${entry.winStreak}
     </div>
   `).join("");
+}
+
+function renderTerritory() {
+  renderMap();
+  renderStrengthStatus();
+  renderAttackPreview();
+}
+
+function renderMap() {
+  const svg = document.getElementById("mapSvg");
+  const M = CONFIG.MAP;
+  const R_HOME = 30, R_REGULAR = 24;
+  let html = "";
+
+  // Edges first, so nodes draw on top. Each undirected edge drawn once.
+  const drawnEdges = new Set();
+  M.NODES.forEach(node => {
+    (M.ADJACENCY[node.id] || []).forEach(adjId => {
+      const key = [node.id, adjId].sort((a, b) => a - b).join("-");
+      if (drawnEdges.has(key)) return;
+      drawnEdges.add(key);
+      const p1 = NODE_POSITIONS[node.id], p2 = NODE_POSITIONS[adjId];
+      html += `<line x1="${p1.x}" y1="${p1.y}" x2="${p2.x}" y2="${p2.y}" stroke="#3d3d46" stroke-width="2" />`;
+    });
+  });
+
+  M.NODES.forEach(node => {
+    const pos = NODE_POSITIONS[node.id];
+    const owner = state.nodeOwner[node.id];
+    const color = EMPIRE_COLOR[owner];
+    const radius = node.type === "home" ? R_HOME : R_REGULAR;
+    // Attackable = owned by a rival (defeated or not — their remaining land
+    // is still fair game) and adjacent to a node the player owns. Neutral
+    // nodes are never attack targets, they're claimed only by absorption.
+    const isPlayerAdjacent = M.ADJACENCY[node.id].some(adjId => state.nodeOwner[adjId] === "player");
+    const isAttackable = !state.gameOver && owner !== "player" && owner !== "neutral" && isPlayerAdjacent;
+    const isPreviewed = state.previewTarget === node.id;
+    const strokeColor = isPreviewed ? "#ffffff" : (isAttackable ? "#e8e8ec" : "#17171b");
+
+    html += `<circle cx="${pos.x}" cy="${pos.y}" r="${radius}" fill="${color}" stroke="${strokeColor}" stroke-width="${isPreviewed ? 3 : isAttackable ? 2.5 : 1.5}"` +
+      (isAttackable ? ` class="map-node-attackable" data-node-id="${node.id}"` : "") + ` />`;
+
+    html += `<text x="${pos.x}" y="${pos.y - radius - 8}" text-anchor="middle" class="map-node-label">${node.label}</text>`;
+
+    if (owner === "neutral") {
+      html += `<text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle" class="map-node-sublabel">Neutral</text>`;
+      const progress = state.nodeAbsorptionProgress[node.id];
+      const lines = Object.keys(progress)
+        .filter(k => progress[k] > 0)
+        .map(k => `${EMPIRE_LABEL[k]} ${Math.min(100, Math.round(progress[k]))}%`);
+      lines.forEach((line, i) => {
+        html += `<text x="${pos.x}" y="${pos.y + radius + 14 + i * 11}" text-anchor="middle" class="map-node-progress">${line}</text>`;
+      });
+    } else {
+      const strengthVal = owner === "player" ? state.playerStrength : Math.round(rivalEffectiveStrength(owner));
+      html += `<text x="${pos.x}" y="${pos.y + 4}" text-anchor="middle" class="map-node-sublabel">Str ${strengthVal}</text>`;
+    }
+  });
+
+  svg.innerHTML = html;
+  svg.querySelectorAll(".map-node-attackable").forEach(el => {
+    el.addEventListener("click", () => {
+      state.previewTarget = Number(el.dataset.nodeId);
+      render();
+    });
+  });
+}
+
+function renderStrengthStatus() {
+  const el = document.getElementById("strengthPanel");
+  let html = `<div class="stat-line"><span>Player (${countOwnedNonHomeNodes("player")} territories)</span><b>Strength ${state.playerStrength}</b></div>`;
+  RIVAL_IDS.forEach(rid => {
+    if (state.rivalDefeated[rid]) return;
+    const personality = CONFIG.MAP.RIVAL_PERSONALITY[rid];
+    html += `<div class="stat-line"><span style="color:${EMPIRE_COLOR[rid]}">${EMPIRE_LABEL[rid]} (${personality}, ${countOwnedNonHomeNodes(rid)} territories)</span><b>Strength ${Math.round(rivalEffectiveStrength(rid))}</b></div>`;
+  });
+  const defeated = RIVAL_IDS.filter(r => state.rivalDefeated[r]).map(r => EMPIRE_LABEL[r]);
+  if (defeated.length) {
+    html += `<div class="status-row"><span>Defeated</span><span>${defeated.join(", ")}</span></div>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderAttackPreview() {
+  const el = document.getElementById("attackPreview");
+  if (state.gameOver) {
+    el.innerHTML = "";
+    return;
+  }
+
+  if (state.pendingAttack !== null) {
+    const node = CONFIG.MAP.NODES.find(n => n.id === state.pendingAttack);
+    el.innerHTML = `
+      <div class="attack-preview-box">
+        <div><b>Attack queued:</b> ${node.label} — resolves when you adopt your next ideology.</div>
+        <button class="cancel-attack-btn" id="cancelAttackBtn" style="margin-top:8px;">Cancel</button>
+      </div>`;
+    document.getElementById("cancelAttackBtn").addEventListener("click", () => {
+      state.pendingAttack = null;
+      render();
+    });
+    return;
+  }
+
+  if (state.previewTarget === null) {
+    el.innerHTML = `<div class="card-flavor">Click a highlighted node adjacent to your territory to preview an attack.</div>`;
+    return;
+  }
+
+  const math = computeCombatMath(state.playerStrength, state.previewTarget);
+  const bandClass = math.band === "certain win" ? "band-win" : math.band === "certain loss" ? "band-loss" : "band-uncertain";
+  el.innerHTML = `
+    <div class="attack-preview-box">
+      <div style="margin-bottom:8px;"><b>Attack preview:</b> ${math.targetNode.label} (held by ${EMPIRE_LABEL[math.defenderId]})</div>
+      <div class="stat-line"><span>Your Strength</span><b>${state.playerStrength}</b></div>
+      <div class="stat-line"><span>Effective defense</span><b>${math.effectiveDefense}</b></div>
+      ${math.homeBonus ? `<div class="stat-line"><span class="card-effect-tag">(defender ${math.defenderStrength} + home bonus ${math.homeBonus})</span></div>` : ""}
+      <div class="stat-line"><span>Margin</span><b>${math.diff >= 0 ? "+" : ""}${math.diff}</b></div>
+      <div class="attack-band ${bandClass}">${math.band}</div>
+      <button class="confirm-attack-btn" id="confirmAttackBtn">Confirm Attack</button>
+      <button class="cancel-attack-btn" id="cancelPreviewBtn">Cancel</button>
+    </div>`;
+  document.getElementById("confirmAttackBtn").addEventListener("click", () => {
+    state.pendingAttack = state.previewTarget;
+    state.previewTarget = null;
+    render();
+  });
+  document.getElementById("cancelPreviewBtn").addEventListener("click", () => {
+    state.previewTarget = null;
+    render();
+  });
 }
 
 // ============================================================================
