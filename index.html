@@ -87,6 +87,24 @@
     background: rgba(255,255,255,0.15);
   }
 
+  /* ---- Food stockpile bar — reuses .axis-track, left-anchored fill whose
+     color signals which of the three food zones it's currently in ---- */
+  .food-track { margin-top: 4px; }
+  .food-fill-famine { background: #b03a2e; }
+  .food-fill-stable { background: #e8b354; }
+  .food-fill-growth { background: #1e8449; }
+
+  /* ---- Tier unlock badges ---- */
+  .tier-badges { display: flex; flex-direction: column; gap: 4px; }
+  .tier-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+  .tier-badge-locked { background: #2c2c33; color: #8a8a94; }
+  .tier-badge-unlocked { background: #1f5a33; color: #a8ffbf; }
+
   /* ---- Pressure meter ---- */
   .pressure-track {
     height: 14px;
@@ -102,6 +120,9 @@
   }
   .pressure-fill-revolt { background: #ff8f6f; }
   .pressure-fill-fragment { background: #6fb6ff; }
+  .resource-fill-stone { background: #8d8d99; }
+  .resource-fill-metal { background: #b8c4d0; }
+  .resource-fill-energy { background: #f0c419; }
   .status-row {
     display: flex;
     justify-content: space-between;
@@ -144,6 +165,7 @@
   .card-effect-line { font-size: 12px; color: #e8e8ec; line-height: 1.5; }
   .card-effect-tag { color: #9a9aa5; }
   .card-special-line { font-size: 12px; color: #e8b354; line-height: 1.5; }
+  .card-resource-line { font-size: 12px; color: #7fc7e8; line-height: 1.5; }
   .card-flavor { font-size: 12px; color: #9a9aa5; font-style: italic; }
 
   /* Card color-coding by lever classification — a left-border accent plus a
@@ -227,6 +249,41 @@
     </div>
 
     <div class="panel">
+      <h2>Population &amp; Resources</h2>
+      <div class="stat-line">
+        <span>Population</span>
+        <b id="populationValue">0</b>
+      </div>
+      <div class="status-row"><span id="populationTrend">—</span></div>
+
+      <div class="stat-line" style="margin-top:10px;"><span>Food Stockpile</span><b id="foodValue">0 / 200</b></div>
+      <div class="axis-track food-track">
+        <div class="axis-fill" id="foodFill" style="left:0%; width:0%"></div>
+        <div class="axis-zone-marker" id="foodGrowthMarker"></div>
+      </div>
+      <div class="status-row"><span>Zone</span><span id="foodZoneLabel">—</span></div>
+
+      <div class="stat-line" style="margin-top:10px;"><span>Stone</span><b id="stoneValue">0 / 300</b></div>
+      <div class="pressure-track"><div class="pressure-fill resource-fill-stone" id="stoneFill" style="width:0%"></div></div>
+
+      <div class="stat-line" style="margin-top:8px;"><span>Metal</span><b id="metalValue">0 / 300</b></div>
+      <div class="pressure-track"><div class="pressure-fill resource-fill-metal" id="metalFill" style="width:0%"></div></div>
+
+      <div class="stat-line" style="margin-top:8px;"><span>Energy</span><b id="energyValue">0 / 300</b></div>
+      <div class="pressure-track"><div class="pressure-fill resource-fill-energy" id="energyFill" style="width:0%"></div></div>
+
+      <div class="tier-badges" style="margin-top:12px;">
+        <span class="tier-badge" id="tierConstructionBadge">Construction &amp; Military: Locked</span>
+        <span class="tier-badge" id="tierConsumerBadge">Consumer Products: Locked</span>
+        <span class="tier-badge" id="tierServicesBadge">Services: Locked</span>
+      </div>
+      <div class="stat-line" style="margin-top:8px;">
+        <span>Research Points</span>
+        <b id="researchValue">locked</b>
+      </div>
+    </div>
+
+    <div class="panel">
       <h2>Run Status</h2>
       <div class="stat-line"><span>Tick</span><b id="tickValue">0</b></div>
       <div class="stat-line"><span>Win-hold streak</span><b id="streakValue">0 / 3</b></div>
@@ -297,6 +354,38 @@ const CONFIG = {
 };
 
 // ============================================================================
+// RESOURCE LAYER CONFIG — population, food, and raw-resource constants.
+// All placeholders for now, expect to retune; kept in one place on purpose.
+// ============================================================================
+CONFIG.RESOURCE = {
+  POPULATION_START: 100,
+  POPULATION_MAX: 1000,          // soft safety cap, arbitrary
+  POPULATION_GROWTH_PER_TICK: 2,
+  POPULATION_FAMINE_LOSS_PER_TICK: 5,
+  POPULATION_WIN_MINIMUM: 80,    // victory now also requires population at or above this
+
+  FOOD_STOCKPILE_START: 50,
+  FOOD_STOCKPILE_MAX: 200,
+  FOOD_BASE_PRODUCTION: 15,
+  FOOD_CONSUMPTION_PER_CAPITA: 0.12,
+  FOOD_FAMINE_THRESHOLD: 0,      // stockpile at or below this = famine this tick
+  FOOD_GROWTH_THRESHOLD: 100,    // stockpile at or above this = population grows this tick
+
+  STONE_BASE_PRODUCTION: 8,
+  METAL_BASE_PRODUCTION: 6,
+  ENERGY_BASE_PRODUCTION: 10,
+  RESOURCE_STOCKPILE_MAX: 300,   // cap for Stone, Metal, Energy
+
+  TIER2_STONE_THRESHOLD: 100,
+  TIER2_METAL_THRESHOLD: 100,    // Construction & Military unlock once BOTH are met
+  TIER2_ENERGY_THRESHOLD: 100,
+  TIER2_FOOD_THRESHOLD: 100,     // Consumer Products unlock once BOTH are met
+
+  SERVICES_RESEARCH_PER_TICK: 5,
+  SERVICES_CAPITAL_WEIGHT_PER_TICK: 3,  // passive nudge toward Capital on the Capital<>Labor axis, once Services is unlocked
+};
+
+// ============================================================================
 // AXIS DEFINITIONS — pole names shown in the UI for each axis key.
 // ============================================================================
 const AXES = [
@@ -328,6 +417,8 @@ const POLE_TABLE = {
 // number here.
 // special: optional { meter: "RevoltPressure"|"FragmentPressure", amount }
 // applied directly to that one pressure meter, on top of any lever effects.
+// resourceEffect: optional { resource, amount } applied directly and in full
+// to that resource stockpile, no ramp, no variance (unlike lever effects).
 // ============================================================================
 const CARDS = [
   { id: 1,  name: "Conscription Doctrine",  effects: [{ pole: "Military", amount: 30 }],
@@ -414,6 +505,18 @@ const CARDS = [
   { id: 40, name: "Joint Military Exercise",  effects: [{ pole: "Military", amount: 10 }],
     special: { meter: "RevoltPressure", amount: -10 },
     flavor: "A show of shared strength with an ally eases domestic tension without a real fight." },
+  { id: 41, name: "Grain Requisition",  effects: [{ pole: "Government", amount: 20 }],
+    resourceEffect: { resource: "foodStockpile", amount: -30 },
+    flavor: "Seizing surplus grain for state distribution turns hunger into leverage, but empties the larder fast." },
+  { id: 42, name: "Strategic Grain Reserves",  effects: [{ pole: "Capital", amount: 10 }],
+    resourceEffect: { resource: "foodStockpile", amount: 30 },
+    flavor: "A stockpile against bad harvests, quietly a tool of control too." },
+  { id: 43, name: "Land Reform",  effects: [{ pole: "Labor", amount: 30 }],
+    resourceEffect: { resource: "foodStockpile", amount: 20 },
+    flavor: "Giving farmers a stake in their own harvest, yields rise and no one's begging for it." },
+  { id: 44, name: "Famine Relief Corps",  effects: [{ pole: "Contentment", amount: 15 }],
+    resourceEffect: { resource: "foodStockpile", amount: 40 },
+    flavor: "Feeding people first, unconditionally, builds trust money can't buy." },
 ];
 
 // ============================================================================
@@ -424,6 +527,7 @@ let state = null;
 function freshState() {
   const axes = {};
   AXES.forEach(a => { axes[a.key] = CONFIG.AXIS_START; });
+  const R = CONFIG.RESOURCE;
   return {
     axes,
     revoltPressure: 0,
@@ -435,15 +539,29 @@ function freshState() {
     outcome: null,      // { result: "win"|"loss", reason: string, detail: string }
     currentDraft: [],
     log: [],
+
+    population: R.POPULATION_START,
+    foodStockpile: R.FOOD_STOCKPILE_START,
+    stoneStockpile: 0,
+    metalStockpile: 0,
+    energyStockpile: 0,
+    researchPoints: 0,
+    // Sticky unlock flags — once true, a tier stays unlocked even if the
+    // stockpiles that triggered it later drop back down.
+    tierUnlocked: { constructionMilitary: false, consumerProducts: false, services: false },
   };
 }
 
+function clampRange(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
 function clampAxis(v) {
-  return Math.max(CONFIG.AXIS_MIN, Math.min(CONFIG.AXIS_MAX, v));
+  return clampRange(v, CONFIG.AXIS_MIN, CONFIG.AXIS_MAX);
 }
 
 function clampPressure(v) {
-  return Math.max(0, Math.min(CONFIG.PRESSURE_MAX, v));
+  return clampRange(v, 0, CONFIG.PRESSURE_MAX);
 }
 
 // Randomize one applied portion by +/- VARIANCE_FRACTION of its base value,
@@ -479,7 +597,8 @@ function classifyCard(card) {
 
 // Build the HTML for a card's effect lines: one per lever effect (with a
 // direction arrow matching the bar — Control poles point right, Influence
-// poles point left), plus a plain special-effect line if the card has one.
+// poles point left), plus a plain special-effect line and/or resource-effect
+// line if the card has them.
 function formatCardEffects(card) {
   const leverLines = card.effects.map(e => {
     const def = POLE_TABLE[e.pole];
@@ -492,7 +611,12 @@ function formatCardEffects(card) {
     const sign = card.special.amount >= 0 ? "+" : "";
     specialLine = `<div class="card-special-line">${card.special.meter} ${sign}${card.special.amount}</div>`;
   }
-  return leverLines + specialLine;
+  let resourceLine = "";
+  if (card.resourceEffect) {
+    const sign = card.resourceEffect.amount >= 0 ? "+" : "";
+    resourceLine = `<div class="card-resource-line">${card.resourceEffect.resource} ${sign}${card.resourceEffect.amount} <span class="card-effect-tag">(instant, exact)</span></div>`;
+  }
+  return leverLines + specialLine + resourceLine;
 }
 
 // Apply a chosen card and run the full tick evaluation.
@@ -533,6 +657,14 @@ function playCard(card) {
     state[meterKey] = clampPressure(state[meterKey] + card.special.amount);
   }
 
+  // A card's resourceEffect field (if any) applies directly and in full to
+  // that one resource stockpile, no ramp, no variance — unlike lever
+  // effects, this number is always exact. The resource-production step
+  // below re-clamps it to its stockpile's bounds along with everything else.
+  if (card.resourceEffect) {
+    state[card.resourceEffect.resource] += card.resourceEffect.amount;
+  }
+
   // 2. Apply and decrement every active ramp, including any just started above.
   const stillActive = [];
   state.activeRamps.forEach(ramp => {
@@ -555,11 +687,76 @@ function playCard(card) {
   state.revoltPressure = clampPressure(state.revoltPressure + CONFIG.PRESSURE_RATE[controlMaxCount]);
   state.fragmentPressure = clampPressure(state.fragmentPressure + CONFIG.PRESSURE_RATE[influenceMaxCount]);
 
+  // 4. Produce and consume resources. Food nets production against
+  //    per-capita consumption; Stone/Metal/Energy only ever accumulate
+  //    (no consumption drain yet, that's out of scope for this pass).
+  const R = CONFIG.RESOURCE;
+  const foodBefore = state.foodStockpile;
+  const foodConsumption = state.population * R.FOOD_CONSUMPTION_PER_CAPITA;
+  state.foodStockpile = clampRange(
+    Math.round(state.foodStockpile + R.FOOD_BASE_PRODUCTION - foodConsumption),
+    0, R.FOOD_STOCKPILE_MAX
+  );
+  const stoneBefore = state.stoneStockpile;
+  const metalBefore = state.metalStockpile;
+  const energyBefore = state.energyStockpile;
+  state.stoneStockpile = clampRange(state.stoneStockpile + R.STONE_BASE_PRODUCTION, 0, R.RESOURCE_STOCKPILE_MAX);
+  state.metalStockpile = clampRange(state.metalStockpile + R.METAL_BASE_PRODUCTION, 0, R.RESOURCE_STOCKPILE_MAX);
+  state.energyStockpile = clampRange(state.energyStockpile + R.ENERGY_BASE_PRODUCTION, 0, R.RESOURCE_STOCKPILE_MAX);
+
+  // 5. Update population from the food zone the stockpile now sits in.
+  const populationBefore = state.population;
+  let populationReason;
+  let foodZone;
+  if (state.foodStockpile <= R.FOOD_FAMINE_THRESHOLD) {
+    foodZone = "famine";
+    state.population = clampRange(state.population - R.POPULATION_FAMINE_LOSS_PER_TICK, 0, R.POPULATION_MAX);
+    populationReason = `famine (food at ${state.foodStockpile}) -${R.POPULATION_FAMINE_LOSS_PER_TICK}`;
+  } else if (state.foodStockpile >= R.FOOD_GROWTH_THRESHOLD) {
+    foodZone = "growth";
+    state.population = clampRange(state.population + R.POPULATION_GROWTH_PER_TICK, 0, R.POPULATION_MAX);
+    populationReason = `growth (food at ${state.foodStockpile}) +${R.POPULATION_GROWTH_PER_TICK}`;
+  } else {
+    foodZone = "stable";
+    populationReason = `stable (food at ${state.foodStockpile}), no change`;
+  }
+
+  // 6. Check tier unlocks. Sticky: only ever flips false -> true.
+  const tierUnlockNotes = [];
+  if (!state.tierUnlocked.constructionMilitary &&
+      state.stoneStockpile >= R.TIER2_STONE_THRESHOLD && state.metalStockpile >= R.TIER2_METAL_THRESHOLD) {
+    state.tierUnlocked.constructionMilitary = true;
+    tierUnlockNotes.push("Tier unlocked: Construction & Military.");
+  }
+  if (!state.tierUnlocked.consumerProducts &&
+      state.energyStockpile >= R.TIER2_ENERGY_THRESHOLD && state.foodStockpile >= R.TIER2_FOOD_THRESHOLD) {
+    state.tierUnlocked.consumerProducts = true;
+    tierUnlockNotes.push("Tier unlocked: Consumer Products.");
+  }
+  if (!state.tierUnlocked.services &&
+      state.tierUnlocked.constructionMilitary && state.tierUnlocked.consumerProducts) {
+    state.tierUnlocked.services = true;
+    tierUnlockNotes.push("Tier unlocked: Services.");
+  }
+
+  // 7. Services' passive effect: steady research gain plus a small nudge
+  //    toward Capital, every tick once unlocked. Not a card, so no variance.
+  let servicesNote = "";
+  if (state.tierUnlocked.services) {
+    const capitalBefore = state.axes.capital;
+    state.axes.capital = clampAxis(capitalBefore + R.SERVICES_CAPITAL_WEIGHT_PER_TICK);
+    state.researchPoints += R.SERVICES_RESEARCH_PER_TICK;
+    servicesNote = `Services: Capital +${R.SERVICES_CAPITAL_WEIGHT_PER_TICK} (passive) [${capitalBefore}→${state.axes.capital}]; research +${R.SERVICES_RESEARCH_PER_TICK} (total ${state.researchPoints})`;
+  }
+
   state.tick += 1;
 
-  // 4. Check loss: either meter reaching PRESSURE_MAX ends the run.
+  // 8. Check loss, in order: population collapse, then either pressure meter.
   let outcome = null;
-  if (state.revoltPressure >= CONFIG.PRESSURE_MAX) {
+  if (state.population <= 0) {
+    outcome = { result: "loss", reason: "Collapse",
+      detail: `Population reached 0.` };
+  } else if (state.revoltPressure >= CONFIG.PRESSURE_MAX) {
     outcome = { result: "loss", reason: "Overthrown",
       detail: `RevoltPressure reached ${state.revoltPressure}.` };
   } else if (state.fragmentPressure >= CONFIG.PRESSURE_MAX) {
@@ -567,8 +764,9 @@ function playCard(card) {
       detail: `FragmentPressure reached ${state.fragmentPressure}.` };
   }
 
-  // 5. If not lost, check win. An axis sitting at an extreme still counts
+  // 9. If not lost, check win. An axis sitting at an extreme still counts
   //    toward a pinned pole here — it just also feeds a pressure meter.
+  //    Victory now also requires population to be holding above the minimum.
   let controlCount = 0, influenceCount = 0;
   const controlAxes = [], influenceAxes = [];
   AXES.forEach(a => {
@@ -576,14 +774,15 @@ function playCard(card) {
     if (v >= CONFIG.WIN_CONTROL_THRESHOLD) { controlCount++; controlAxes.push(a.controlLabel); }
     if (v <= CONFIG.WIN_INFLUENCE_THRESHOLD) { influenceCount++; influenceAxes.push(a.influenceLabel); }
   });
-  const qualifies = (controlCount >= 2 && influenceCount >= 1) || (influenceCount >= 2 && controlCount >= 1);
+  const leverQualifies = (controlCount >= 2 && influenceCount >= 1) || (influenceCount >= 2 && controlCount >= 1);
+  const qualifies = leverQualifies && state.population >= R.POPULATION_WIN_MINIMUM;
 
   if (!outcome) {
     if (qualifies) {
       state.winStreak += 1;
       if (state.winStreak >= CONFIG.WIN_HOLD_TICKS) {
         outcome = { result: "win", reason: "Victory",
-          detail: `Held configuration (Control: ${controlAxes.join(", ") || "none"} | Influence: ${influenceAxes.join(", ") || "none"}) for ${state.winStreak} consecutive ticks.` };
+          detail: `Held configuration (Control: ${controlAxes.join(", ") || "none"} | Influence: ${influenceAxes.join(", ") || "none"}) with population ${state.population} for ${state.winStreak} consecutive ticks.` };
       }
     } else {
       state.winStreak = 0;
@@ -607,17 +806,31 @@ function playCard(card) {
   const pressureNote = card.special
     ? `; ${card.special.meter} ${card.special.amount >= 0 ? "+" : ""}${card.special.amount}`
     : "";
+  const resourceEffectNote = card.resourceEffect
+    ? `; ${card.resourceEffect.resource} ${card.resourceEffect.amount >= 0 ? "+" : ""}${card.resourceEffect.amount} (card effect, exact)`
+    : "";
 
   state.log.unshift({
     tick: state.tick,
     cardName: card.name,
     effectsSummary,
     pressureNote,
+    resourceEffectNote,
     axesSummary,
     revoltBefore, revoltAfter: state.revoltPressure,
     fragmentBefore, fragmentAfter: state.fragmentPressure,
     controlMaxCount, influenceMaxCount,
     winStreak: state.winStreak,
+
+    foodBefore, foodProduction: R.FOOD_BASE_PRODUCTION,
+    foodConsumption: Math.round(foodConsumption * 10) / 10,
+    foodAfter: state.foodStockpile, foodZone,
+    stoneBefore, stoneAfter: state.stoneStockpile,
+    metalBefore, metalAfter: state.metalStockpile,
+    energyBefore, energyAfter: state.energyStockpile,
+    populationBefore, populationAfter: state.population, populationReason,
+    tierUnlockNotes,
+    servicesNote,
   });
 
   if (outcome) {
@@ -625,7 +838,7 @@ function playCard(card) {
     state.outcome = outcome;
     state.currentDraft = [];
   } else {
-    // 6. Draw the next 3 cards and continue.
+    // 10. Draw the next 3 cards and continue.
     state.currentDraft = drawCards();
   }
 }
@@ -637,6 +850,7 @@ function render() {
   renderBanner();
   renderAxes();
   renderPressureMeters();
+  renderResources();
   renderStatus();
   renderCards();
   renderLog();
@@ -710,6 +924,49 @@ function renderPressureMeters() {
   document.getElementById("fragmentCount").textContent = influenceMaxCount;
 }
 
+function renderResources() {
+  const R = CONFIG.RESOURCE;
+
+  document.getElementById("populationValue").textContent = state.population;
+  let trend;
+  if (state.foodStockpile <= R.FOOD_FAMINE_THRESHOLD) trend = "▼ Famine — population falling";
+  else if (state.foodStockpile >= R.FOOD_GROWTH_THRESHOLD) trend = "▲ Growth — population rising";
+  else trend = "● Stable — population holding";
+  document.getElementById("populationTrend").textContent = trend;
+
+  document.getElementById("foodValue").textContent = `${state.foodStockpile} / ${R.FOOD_STOCKPILE_MAX}`;
+  const foodFillPct = (state.foodStockpile / R.FOOD_STOCKPILE_MAX) * 100;
+  const foodFill = document.getElementById("foodFill");
+  foodFill.style.left = "0%";
+  foodFill.style.width = `${foodFillPct}%`;
+  foodFill.className = "axis-fill " +
+    (state.foodStockpile <= R.FOOD_FAMINE_THRESHOLD ? "food-fill-famine"
+      : state.foodStockpile >= R.FOOD_GROWTH_THRESHOLD ? "food-fill-growth"
+      : "food-fill-stable");
+  document.getElementById("foodGrowthMarker").style.left = `${(R.FOOD_GROWTH_THRESHOLD / R.FOOD_STOCKPILE_MAX) * 100}%`;
+  const zoneLabel = state.foodStockpile <= R.FOOD_FAMINE_THRESHOLD ? "Famine"
+    : state.foodStockpile >= R.FOOD_GROWTH_THRESHOLD ? "Growth" : "Stable";
+  document.getElementById("foodZoneLabel").textContent = zoneLabel;
+
+  document.getElementById("stoneValue").textContent = `${state.stoneStockpile} / ${R.RESOURCE_STOCKPILE_MAX}`;
+  document.getElementById("stoneFill").style.width = `${(state.stoneStockpile / R.RESOURCE_STOCKPILE_MAX) * 100}%`;
+  document.getElementById("metalValue").textContent = `${state.metalStockpile} / ${R.RESOURCE_STOCKPILE_MAX}`;
+  document.getElementById("metalFill").style.width = `${(state.metalStockpile / R.RESOURCE_STOCKPILE_MAX) * 100}%`;
+  document.getElementById("energyValue").textContent = `${state.energyStockpile} / ${R.RESOURCE_STOCKPILE_MAX}`;
+  document.getElementById("energyFill").style.width = `${(state.energyStockpile / R.RESOURCE_STOCKPILE_MAX) * 100}%`;
+
+  const setBadge = (id, label, unlocked) => {
+    const el = document.getElementById(id);
+    el.textContent = `${label}: ${unlocked ? "Unlocked" : "Locked"}`;
+    el.className = "tier-badge " + (unlocked ? "tier-badge-unlocked" : "tier-badge-locked");
+  };
+  setBadge("tierConstructionBadge", "Construction & Military", state.tierUnlocked.constructionMilitary);
+  setBadge("tierConsumerBadge", "Consumer Products", state.tierUnlocked.consumerProducts);
+  setBadge("tierServicesBadge", "Services", state.tierUnlocked.services);
+
+  document.getElementById("researchValue").textContent = state.tierUnlocked.services ? state.researchPoints : "locked";
+}
+
 function renderStatus() {
   document.getElementById("tickValue").textContent = state.tick;
   document.getElementById("streakValue").textContent = `${state.winStreak} / ${CONFIG.WIN_HOLD_TICKS}`;
@@ -749,11 +1006,16 @@ function renderLog() {
   container.innerHTML = state.log.map(entry => `
     <div class="log-entry">
       <span class="log-tick">Tick ${entry.tick}</span> — adopted "${entry.cardName}"<br>
-      Effects: ${entry.effectsSummary}${entry.pressureNote}<br>
+      Effects: ${entry.effectsSummary}${entry.pressureNote}${entry.resourceEffectNote}<br>
       Axes now: ${entry.axesSummary}<br>
       RevoltPressure: ${entry.revoltBefore} → ${entry.revoltAfter} (axes at ${CONFIG.CONTROL_EXTREME}: ${entry.controlMaxCount}) |
       FragmentPressure: ${entry.fragmentBefore} → ${entry.fragmentAfter} (axes at ${CONFIG.INFLUENCE_EXTREME}: ${entry.influenceMaxCount})<br>
-      Win-hold streak: ${entry.winStreak}
+      Food: ${entry.foodBefore} + ${entry.foodProduction} production − ${entry.foodConsumption} consumption → ${entry.foodAfter} (${entry.foodZone} zone)<br>
+      Population: ${entry.populationBefore} → ${entry.populationAfter} — ${entry.populationReason}<br>
+      Stone: ${entry.stoneBefore}→${entry.stoneAfter} | Metal: ${entry.metalBefore}→${entry.metalAfter} | Energy: ${entry.energyBefore}→${entry.energyAfter}
+      ${entry.tierUnlockNotes.length ? `<br>${entry.tierUnlockNotes.join(" ")}` : ""}
+      ${entry.servicesNote ? `<br>${entry.servicesNote}` : ""}
+      <br>Win-hold streak: ${entry.winStreak}
     </div>
   `).join("");
 }
